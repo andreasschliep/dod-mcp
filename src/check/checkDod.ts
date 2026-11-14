@@ -91,6 +91,8 @@ export interface CheckResult {
   summary: { criteria: number; met: number; not_met: number; needs_judgment: number };
   criteria: CriterionResult[];
   unused_evidence: { index: number; criterion: string; reason: 'unknown_criterion' }[];
+  /** Said in the structured result too: clients such as Claude Code show the model only that. */
+  decision: string;
   limits: string[];
 }
 
@@ -167,6 +169,7 @@ export function checkDod(
     },
     criteria,
     unused_evidence: unused,
+    decision: `The server reports per criterion only. Whether ${input.item.id} is done is the team's decision; attestations come from the named role, never from the agent.`,
     limits: CHECK_LIMITS,
   };
 }

@@ -210,8 +210,10 @@ test('check_dod with the example evidence returns status per criterion', async (
   delete input._comment;
   const result = await client.callTool({ name: 'check_dod', arguments: input });
   assert.equal(result.isError, undefined, text(result));
-  const data = result.structuredContent as { summary: Record<string, number> };
+  const data = result.structuredContent as { summary: Record<string, number>; decision: string };
   assert.deepEqual(data.summary, { criteria: 9, met: 4, not_met: 3, needs_judgment: 2 });
+  // Claude Code shows the model only structuredContent, so the decision note is there too.
+  assert.match(data.decision, /Whether DEMO-42 is done is the team's decision/);
   assert.match(
     text(result),
     /\| QUALITY-GATE \| software-dev \| evidence \| not met \| evidence_other_ref \|/,

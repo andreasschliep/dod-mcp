@@ -128,6 +128,7 @@ export const checkDodOutput = z.object({
   unused_evidence: z.array(
     z.object({ index: z.number(), criterion: z.string(), reason: z.string() }),
   ),
+  decision: z.string(),
   limits: z.array(z.string()),
 });
 

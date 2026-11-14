@@ -2,7 +2,7 @@
  * Prompt template done_check (design section 17, F3b): the workflow the model follows to
  * check an item against its DoD. A prompt, not a tool, because collecting evidence and
  * answering judgment questions need the model and the user's other servers. In Claude
- * Code it appears as /dod:done_check.
+ * Code it appears as /mcp__<server name>__done_check, e.g. /mcp__dod__done_check DEMO-42.
  */
 import { completable, type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';

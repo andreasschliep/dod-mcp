@@ -59,7 +59,7 @@ npm test
 claude mcp add --transport stdio --scope local dod --env DOD_DIR=/absolute/path/to/your/dod -- node /absolute/path/to/dod-mcp/dist/main.js
 ```
 
-Then ask Claude Code "Check DEMO-42 against our Definition of Done", or run `/dod:done_check DEMO-42`. Without `DOD_DIR` the server serves the fictional example in `dod/`.
+Then ask Claude Code "Check DEMO-42 against our Definition of Done", or run the prompt as `/mcp__dod__done_check DEMO-42` (Claude Code names MCP prompts `/mcp__<server>__<prompt>`). Without `DOD_DIR` the server serves the fictional example in `dod/`.
 
 ### In a container, over HTTPS
 

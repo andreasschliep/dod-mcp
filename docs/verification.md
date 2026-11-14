@@ -30,9 +30,23 @@ Run on 14 November 2026 on macOS with Node.js 26.7.0 and Docker Desktop 29.6.2; 
 
 `check_dod` on `examples/evidence/software-dev-gaps.json`: 9 criteria, 4 met, 3 not met (`evidence_other_ref` for the quality gate, `evidence_stale` for the tests, `attestation_missing` for the second person), 2 need judgment. The structured result is 4,077 characters, about 1,000 tokens, well under the 8,000-token budget. The table is in the README.
 
+## Claude Code end to end
+
+Claude Code 2.1.323, non-interactive (`claude -p`) with `--strict-mcp-config`, so only the test server was loaded; the example DoD, database in memory.
+
+| Run                                                                                                                         | What happened                                                                                                                                                                                                                                                                                                              | Result                           |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `claude mcp add --transport stdio --scope local …` as in the README                                                         | `claude mcp get` reports the server as connected; removed again with `claude mcp remove`                                                                                                                                                                                                                                   | the README command works         |
+| stdio: `get_dod` (Story), `check_dod` on `software-dev-gaps.json`, `rubric://dod/software-dev`                              | Claude found the tools through its tool search, called them in order and reported the table: 4 met, 3 not met, 2 need judgment. For both judgment criteria it wrote "kein Material", because the rubric demands a quote; it named the attestation limit itself and did not call the item done. 6 turns, about 0.27 USD     | as in the unit test              |
+| prompt as `/dod-e2e:done_check DEMO-42`                                                                                     | not recognised as a command; Claude ran the steps by hand, stopped because no ticket tool was available, and did not pass the fictional example evidence off as real                                                                                                                                                       | wrong name in the README (fixed) |
+| prompt as `/mcp__dod-e2e__done_check DEMO-42`                                                                               | listed under `slash_commands`; Claude started with step 1 of the prompt (looking for a ticket tool)                                                                                                                                                                                                                        | the prompt works                 |
+| HTTPS against the container (`docker compose`), bearer token in the client config, `NODE_EXTRA_CA_CERTS` on the certificate | connected over the 2026-07-28 protocol (`server/discover`); `get_dod` by label `kunde`, `check_dod` on `kundenanfrage-gaps.json`: 2 met, 2 not met (`expectation_not_met`, `role_mismatch`), 3 need judgment, one piece of unused evidence. The container log shows each call with method and tool, no arguments, no token | as in the unit test              |
+
+**What Claude Code passes to the model:** only `structuredContent`, serialised as JSON; the Markdown summary in the text content does not reach the model. The closing sentence "Whether … is done is the team's decision" was therefore only in the text. `check_dod` now carries it in the structured result as well (`decision`).
+
 ## What was not verified
 
-- **Claude Code end to end.** Neither `claude mcp add` nor the prompt `done_check` was run in a real Claude Code session; that would have changed the local Claude Code configuration. The protocol tests use the official MCP client instead. Open: does Claude Code show `structuredContent` or only the text, and does it accept the self-signed certificate with `NODE_EXTRA_CA_CERTS`?
+- **An interactive Claude Code session and Claude Desktop.** The end-to-end runs were non-interactive; a full `done_check` with real ticket, CI and SonarQube servers needs those servers.
 - **MCP Inspector.** Not run.
 - **Linux hosts.** Secrets are mounted with mode 0644 so that the container user can read them; on Docker Desktop for macOS this works, on a Linux host file ownership may need adjusting.
 - **Load and concurrency.** One container, one SQLite writer; not measured.
@@ -45,4 +59,5 @@ Run on 14 November 2026 on macOS with Node.js 26.7.0 and Docker Desktop 29.6.2; 
 - **SDK bearer auth needs an expiry.** `requireBearerAuth` rejects tokens without `expiresAt`; static tokens get a five-minute expiry per check.
 - **`@modelcontextprotocol/node` is versioned apart from the server package.** `toNodeHandler` comes in 2.1.2, built for `@modelcontextprotocol/server` ^2.4.0.
 - **Docker assigns a new host port on restart** when the port is chosen by Docker; the container test reads it again after the restart.
+- **Claude Code shows the model only `structuredContent`** and names MCP prompts `/mcp__<server>__<prompt>` (section "Claude Code end to end").
 - **Real data showed two format gaps** that are now closed (nested fields in `expect`, Markdown headings as lint fields) and two that are open (comparing two fields, deadlines relative to another time).
