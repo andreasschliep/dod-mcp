@@ -27,7 +27,7 @@ test('the example folder is valid: base, three types and the mapping', () => {
   const set = loadDodSet(EXAMPLE_DOD);
   assert.deepEqual(allErrors(set), []);
   assert.deepEqual([...set.types.keys()], ['dokument', 'kundenanfrage', 'software-dev']);
-  assert.equal(set.base.parsed?.version, 2);
+  assert.equal(set.base.parsed?.version, 3);
   assert.deepEqual(
     set.mapping.parsed?.entries.map((e) => [e.type, e.ticket_types, e.labels]),
     [
@@ -43,7 +43,7 @@ test('merging keeps base criteria first, each with origin, file and line', () =>
   const result = effectiveDod(set, 'software-dev');
   assert.ok(result.ok);
   const { dod } = result;
-  assert.equal(dod.dod_version, 'software-dev@4+base@2');
+  assert.equal(dod.dod_version, 'software-dev@4+base@3');
   assert.deepEqual(
     dod.criteria.map((c) => `${c.origin}:${c.id}:${c.check}`),
     [
@@ -314,7 +314,7 @@ test('a new type is a new file, without code changes', () => {
   assert.deepEqual(allErrors(set), []);
   const result = effectiveDod(set, 'einkauf');
   assert.ok(result.ok);
-  assert.equal(result.dod.dod_version, 'einkauf@1+base@2');
+  assert.equal(result.dod.dod_version, 'einkauf@1+base@3');
   assert.deepEqual(
     result.dod.criteria.map((c) => c.id),
     ['ERGEBNIS-VERLINKT', 'FOLGEARBEIT', 'ZWEITE-PERSON', 'ANGEBOTE'],

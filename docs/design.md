@@ -95,7 +95,7 @@ dod/
 - Every other `*.yaml` in the folder is a type file. **The type name is the file name** without extension (`^[a-z][a-z0-9-]{0,39}$`), and the file's `type` key must equal it. A new type is exactly one new file.
 - The folder comes from `DOD_DIR`. Results show file names only, never absolute paths.
 - Every file carries `version` (an integer, raised with every change of content) and a header comment; fictional files say so in their first line.
-- The effective DoD of a type is called, for example, `kundenanfrage@3+base@2`. This label appears in every result, so a report states which version it checked against.
+- The effective DoD of a type is called, for example, `kundenanfrage@3+base@3`. This label appears in every result, so a report states which version it checked against.
 - Keys are English (as in the sketch's example); criterion texts, questions and templates are in the team's language, German in the fictional data.
 
 ### 5.2 Base and type files
@@ -359,7 +359,7 @@ Output (shortened, fictional):
 {
   "item": { "id": "DEMO-42", "ref": "9f2c1ab" },
   "type": "software-dev",
-  "dod_version": "software-dev@4+base@2",
+  "dod_version": "software-dev@4+base@3",
   "resolution": { "via": "ticket_type", "candidates": ["software-dev"] },
   "as_of": "2026-11-14T10:00:00Z",
   "summary": { "criteria": 9, "met": 4, "not_met": 3, "needs_judgment": 2 },
@@ -433,7 +433,7 @@ input = z.object({
 ```
 
 - For a type, it compares two versions as described in 6.3, each merged with its base. For `base`, it compares two base versions.
-- Output: `{ type, from: "software-dev@3+base@1", to: "software-dev@4+base@2", criteria: { added, removed, changed: [{ id, origin, fields: [{ key, from, to }] }] }, rules: { added, removed, changed }, template_changed, first_seen: { from, to } }`. Every entry names its `origin`, so a review sees whether a change came from the base or the type.
+- Output: `{ type, from: "software-dev@3+base@1", to: "software-dev@4+base@3", criteria: { added, removed, changed: [{ id, origin, fields: [{ key, from, to }] }] }, rules: { added, removed, changed }, template_changed, first_seen: { from, to } }`. Every entry names its `origin`, so a review sees whether a change came from the base or the type.
 - Removing a type's own criterion between two versions is allowed (the team decided it by pull request); the diff shows it. Only removing a base criterion inside a type file is an error (5.6).
 - Domain errors: `unknown_type`, `unknown_version` (the hint lists the recorded versions), `no_history` (only one version recorded), `history_unavailable`.
 
@@ -538,7 +538,7 @@ One invented team with three task types, following the table in the sketch (3.1)
 
 | File                 | Version | Evidence (`evidence`)                                                    | Judgment (`judgment`)              | Attestation                        | Acceptance rules                               |
 | -------------------- | ------- | ------------------------------------------------------------------------ | ---------------------------------- | ---------------------------------- | ---------------------------------------------- |
-| `base.yaml`          | 2       | `ERGEBNIS-VERLINKT`                                                      | `FOLGEARBEIT`                      | `ZWEITE-PERSON` (Teammitglied)     | `AK-VAGE`                                      |
+| `base.yaml`          | 3       | `ERGEBNIS-VERLINKT`                                                      | `FOLGEARBEIT`                      | `ZWEITE-PERSON` (Teammitglied)     | `AK-VAGE`                                      |
 | `software-dev.yaml`  | 4       | `QUALITY-GATE`, `BUILD`, `TESTS` (all `same_ref`, 24 h), `TESTAENDERUNG-AUSGEWIESEN` | `KRITERIEN-GETESTET`   | `RUNBOOK` (Betrieb)                | `AK-GWT`, `AK-DANN`, `AK-EINHEIT`, `AK-VAGE-SW` |
 | `dokument.yaml`      | 2       | `PFLICHTABSCHNITTE`, `LINKS` (72 h), `BEGRIFFE`                          | `ZWECK-ZIELGRUPPE`, `SYSTEMSTAND`  | `FACHFREIGABE` (Fachverantwortung) | `AK-FELDER` (Zweck, Zielgruppe, Umfang), `AK-VAGE-DOK` |
 | `kundenanfrage.yaml` | 3       | `FRIST`                                                                  | `VOLLSTAENDIG`, `WISSENSBASIS`     | `ZUSAGE` (Vertrieb)                | `AK-FELDER` (Fragen as a list, Frist), `AK-VAGE-KA` |

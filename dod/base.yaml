@@ -2,7 +2,7 @@
 # Applies to every task type. A type file inherits all of it and may only add.
 # Change by pull request and raise `version` with every change of content.
 type: base
-version: 2
+version: 3
 title: Basis für alle Aufgabentypen
 criteria:
   - id: ERGEBNIS-VERLINKT
@@ -10,7 +10,7 @@ criteria:
     check: evidence
     source: tickets.links
     expect: { field: result_links, present: true }
-    fetch_with: [tickets:get_item]
+    fetch_with: [tickets:get_item, helpdesk:get_ticket]
   - id: FOLGEARBEIT
     text: Folgearbeiten sind als neue Items erfasst.
     check: judgment
@@ -23,7 +23,7 @@ criteria:
     text: Eine zweite Person hat das Ergebnis angesehen.
     check: attestation
     role: Teammitglied
-    fetch_with: [tickets:get_item]
+    fetch_with: [tickets:get_item, helpdesk:get_ticket]
 acceptance:
   rules:
     - id: AK-VAGE
