@@ -1,0 +1,65 @@
+# FICTIONAL EXAMPLE: Definition of Done for documents in an invented team.
+# Inherits dod/base.yaml. Raise `version` with every change of content.
+type: dokument
+version: 2
+title: Dokument
+extends: base
+criteria:
+  - id: PFLICHTABSCHNITTE
+    text: Alle Pflichtabschnitte der Dokumentvorlage sind vorhanden.
+    check: evidence
+    source: docs.outline
+    expect: { field: missing_sections, max: 0 }
+    fetch_with: [docs:get_outline]
+  - id: LINKS
+    text: Alle Links im Dokument funktionieren.
+    check: evidence
+    source: docs.link_check
+    expect: { field: broken_links, max: 0 }
+    max_age_hours: 72
+    fetch_with: [docs:check_links]
+  - id: BEGRIFFE
+    text: Das Dokument verwendet die Begriffe aus der Termbase.
+    check: evidence
+    source: termbase
+    expect: { field: errors, max: 0 }
+    fetch_with: [course-standards:check_terms]
+  - id: ZWECK-ZIELGRUPPE
+    text: Das Dokument passt zu Zweck und Zielgruppe aus den Akzeptanzkriterien.
+    check: judgment
+    question: An welcher Stelle verfehlt das Dokument den genannten Zweck oder die genannte Zielgruppe?
+    plausible_if:
+      - Jeder Abschnitt dient erkennbar dem Zweck.
+      - Begriffe, die die Zielgruppe nicht kennt, werden beim ersten Vorkommen erklärt.
+    doubtful_if:
+      - Ein Abschnitt richtet sich an eine andere Zielgruppe als die genannte.
+      - Wesentliches aus „Umfang“ fehlt oder steht nur als Verweis da.
+  - id: SYSTEMSTAND
+    text: Das Dokument stimmt mit dem aktuellen Stand des Systems überein.
+    check: judgment
+    question: Welche Aussage im Dokument passt nicht zum aktuellen Verhalten des Systems?
+    plausible_if:
+      - Bildschirmfotos, Menüpfade und Parameter entsprechen der aktuellen Version.
+    doubtful_if:
+      - Das Dokument nennt Funktionen, Werte oder Pfade, die es nicht mehr gibt.
+  - id: FACHFREIGABE
+    text: Die fachlich verantwortliche Person hat das Dokument freigegeben.
+    check: attestation
+    role: Fachverantwortung
+    fetch_with: [tickets:get_item]
+acceptance:
+  template: |
+    Zweck: <wofür das Dokument da ist>
+    Zielgruppe: <wer es liest und was diese Person schon weiß>
+    Umfang: <was das Dokument abdeckt>
+    Nicht im Umfang: <was es bewusst weglässt>
+  rules:
+    - id: AK-FELDER
+      kind: fields
+      fields:
+        - { name: Zweck }
+        - { name: Zielgruppe }
+        - { name: Umfang }
+    - id: AK-VAGE-DOK
+      kind: vague_words
+      words: [verständlich, ansprechend, übersichtlich, ausführlich]

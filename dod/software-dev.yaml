@@ -1,0 +1,80 @@
+# FICTIONAL EXAMPLE: Definition of Done for software development in an invented team.
+# Inherits dod/base.yaml. Raise `version` with every change of content.
+# Tool names in fetch_with are placeholders, except the SonarQube MCP Server tool.
+type: software-dev
+version: 4
+title: Softwareentwicklung
+extends: base
+criteria:
+  - id: QUALITY-GATE
+    text: Das Quality Gate ist für den geprüften Commit grün.
+    check: evidence
+    source: sonarqube.quality_gate
+    expect: { field: status, equals: OK }
+    same_ref: true
+    max_age_hours: 24
+    fetch_with: [sonarqube:get_project_quality_gate_status]
+  - id: BUILD
+    text: Der Build für den geprüften Commit ist erfolgreich.
+    check: evidence
+    source: ci.build
+    expect: { field: result, equals: succeeded }
+    same_ref: true
+    max_age_hours: 24
+    fetch_with: [ci:get_build]
+  - id: TESTS
+    text: Alle automatisierten Tests laufen grün.
+    check: evidence
+    source: ci.tests
+    expect: { field: failed, max: 0 }
+    same_ref: true
+    max_age_hours: 24
+    fetch_with: [ci:get_test_results]
+  - id: TESTAENDERUNG-AUSGEWIESEN
+    text: Geänderte oder gelöschte Tests sind in der PR-Beschreibung aufgeführt.
+    check: evidence
+    source: scm.pull_request
+    expect: { field: unlisted_test_changes, max: 0 }
+    same_ref: true
+    fetch_with: [scm:get_pull_request]
+  - id: KRITERIEN-GETESTET
+    text: Jedes Akzeptanzkriterium hat einen passenden Test.
+    check: judgment
+    question: Zu welchem Akzeptanzkriterium fehlt ein Test, der genau dieses Verhalten prüft?
+    plausible_if:
+      - Zu jedem Szenario gibt es einen Test, dessen Name oder Kommentar das Szenario nennt.
+      - Der Test prüft das Dann des Szenarios, nicht nur, dass kein Fehler auftritt.
+    doubtful_if:
+      - Ein Szenario ist nur durch einen allgemeinen Test abgedeckt („Seite lädt“).
+      - Tests wurden im selben Änderungssatz gelöscht oder abgeschwächt.
+  - id: RUNBOOK
+    text: Das Runbook ist für die Änderung aktuell.
+    check: attestation
+    role: Betrieb
+    max_age_hours: 168
+    fetch_with: [tickets:get_item]
+acceptance:
+  template: |
+    Szenario: <kurzer Name>
+      Angenommen <Ausgangslage>
+      Wenn <Aktion>
+      Dann <beobachtbares Ergebnis, mit Zahl und Einheit, wo es darauf ankommt>
+  rules:
+    - id: AK-GWT
+      kind: gherkin
+    - id: AK-DANN
+      kind: observable_then
+      phrases:
+        - versteht
+        - weiß
+        - ist zufrieden
+        - fühlt sich
+        - funktioniert korrekt
+        - funktioniert wie erwartet
+        - ordnungsgemäß
+    - id: AK-EINHEIT
+      kind: numbers_need_units
+      units: [ms, s, sek, min, h, '%', KB, MB, GB, px]
+    - id: AK-VAGE-SW
+      kind: vague_words
+      words: [schnell, performant, benutzerfreundlich, intuitiv, robust, zeitnah]

@@ -1,0 +1,31 @@
+# FICTIONAL EXAMPLE: base Definition of Done of an invented team.
+# Applies to every task type. A type file inherits all of it and may only add.
+# Change by pull request and raise `version` with every change of content.
+type: base
+version: 2
+title: Basis für alle Aufgabentypen
+criteria:
+  - id: ERGEBNIS-VERLINKT
+    text: Das Ergebnis ist im Ticket verlinkt.
+    check: evidence
+    source: tickets.links
+    expect: { field: result_links, present: true }
+    fetch_with: [tickets:get_item]
+  - id: FOLGEARBEIT
+    text: Folgearbeiten sind als neue Items erfasst.
+    check: judgment
+    question: Welche offene Folgearbeit aus dem Ergebnis ist noch nicht als eigenes Item erfasst?
+    plausible_if:
+      - Jede offene Folgearbeit im Ergebnis verweist auf ein neues Item.
+    doubtful_if:
+      - Das Ergebnis nennt „später“, „TODO“ oder „nächster Schritt“ ohne Verweis auf ein Item.
+  - id: ZWEITE-PERSON
+    text: Eine zweite Person hat das Ergebnis angesehen.
+    check: attestation
+    role: Teammitglied
+    fetch_with: [tickets:get_item]
+acceptance:
+  rules:
+    - id: AK-VAGE
+      kind: vague_words
+      words: [usw., etc., ggf., möglichst, irgendwie, und so weiter]

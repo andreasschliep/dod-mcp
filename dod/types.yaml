@@ -1,0 +1,7 @@
+# FICTIONAL EXAMPLE: ticket type and label → task type of an invented team.
+# A ticket type or label may belong to one task type only.
+version: 1
+mappings:
+  software-dev: { ticket_types: [Story, Bug], labels: [code] }
+  dokument: { ticket_types: [Dokument], labels: [doku] }
+  kundenanfrage: { ticket_types: [Anfrage], labels: [kunde] }
