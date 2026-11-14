@@ -1,96 +1,111 @@
-# dod-mcp: Design
+# dod-mcp: design
 
-Status: Entwurf zur Freigabe, 14.11.2026. Grundlage: Konzeptskizze „Team-MCP-Server Definition of Done“ vom 14.11.2026, Abschnitte 3 und 4. Design und Entscheidungen: Andreas Schliep. Entworfen mit Claude Code. **Alle Daten in diesem Repository sind fiktiv.**
+Status: draft for review, second version, 14 November 2026. Basis: the concept sketch "Team-MCP-Server Definition of Done" of 14 November 2026, sections 3 and 4. Design and decisions: Andreas Schliep. Drafted with Claude Code. **All data in this repository is fictional.**
 
-**In zwei Sätzen:** Der Server liest die Definition of Done eines Teams aus versionierten YAML-Dateien, eine gemeinsame Basis und eine Datei je Aufgabentyp, und stellt jeden Typ als eigene Ressource bereit. Er prüft Belege, die der Agent über die offiziellen Server gesammelt hat, und Akzeptanzkriterien deterministisch, meldet je Kriterium `erfüllt`, `nicht erfüllt` oder `braucht Urteil` mit Fundstelle und erklärt nie ein Item für „done“.
+Changes from the first draft (answers in section 18): the specification is in English, and so are status and finding codes; a configurable database (SQLite first) keeps every version of the DoD files; the server runs in a Docker container and is reached over HTTPS with a bearer token; the container is defined and tested in this repository. With the version history in place, `diff_dod` and `dod://type/{type}/version/{n}` move from open points into scope.
 
-Erklärbarkeit vor Funktionsumfang: Jeder Teil soll sich in zwei Sätzen erklären lassen.
+**In two sentences:** The server reads a team's Definition of Done from versioned YAML files (a shared base and one file per task type), keeps every version in a database, and offers each type as its own resource. It checks evidence that the agent collected through the official servers, and acceptance criteria, deterministically; it reports `met`, `not_met` or `needs_judgment` per criterion with a location, and never declares an item done.
 
-## 1. Ziel und Nicht-Ziele
+Explainability comes before features. Every part of this design should be explainable in two sentences.
 
-**Ziel.** Ein Agent (Claude Code, Claude Desktop, jeder MCP-Client) kann fragen: „Welche DoD gilt für dieses Item, was muss ich belegen, und was ist mit diesen Belegen erfüllt?“ Er bekommt je Kriterium einen Status, den Beleg oder einen Befund mit Hinweis, wie der Beleg zu holen ist, und für Urteilsfragen die Frage samt Maßstab. Mensch und Agent lesen dieselben Dateien.
+## 1. Goal and non-goals
 
-**Nicht-Ziele.**
+**Goal.** An agent (Claude Code, Claude Desktop, any MCP client) can ask: "Which DoD applies to this item, what do I have to prove, and what is met with this evidence?" It gets a status per criterion, the evidence or a finding with a hint on how to get it, and for judgment criteria the question with its standard. People and agents read the same files.
 
-- **Kein „done“.** Der Server hat keinen Gesamtstatus und kein schreibendes Tool. Das Team entscheidet.
-- **Keine Belege selbst holen.** Der Server ruft keine API auf und braucht keinen Schlüssel (Variante B der Skizze, D1).
-- **Kein Modellaufruf.** Urteilsfragen beantwortet das Modell im Client (D2).
-- **Keine Pflege der DoD über den Server.** Geändert wird per Pull Request auf die Dateien; die Git-Historie ist das Protokoll.
-- **Keine echten Daten.** Nur fiktive Teams, Tickets und Belege.
+**Non-goals.**
 
-## 2. Kontext
+- **No "done".** The server has no overall status and no tool that writes to tickets, pull requests or files. The team decides.
+- **No fetching of evidence.** The server calls no external API and holds no credentials for other systems (variant B of the sketch, D1).
+- **No model call.** The model in the client answers judgment questions (D2).
+- **No editing of the DoD through the server.** The YAML files in the team repository are the source of truth and change by pull request. The database records what the server has seen; it is not a second place to edit.
+- **No real data.** Only fictional teams, tickets and evidence.
 
-| Baustein          | Stand 14.11.2026                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------- |
-| MCP-Spezifikation | 2026-07-28: zustandslos; Sampling, Roots und Logging abgekündigt                                          |
-| TypeScript-SDK    | `@modelcontextprotocol/server` 2.4.0, wie in `miro-board-mcp` und `course-standards-mcp`                  |
-| YAML-Parser       | `yaml` 2.9.1 (liefert Zeilen je Knoten; `js-yaml` kann das nicht, D6)                                     |
-| Laufzeit          | Node.js ≥ 22.18 (TypeScript-Tests ohne Build über Type Stripping), lokal 26.7.0                           |
-| Vorbilder         | `course-standards-mcp` (Befunde mit Zeile, Rubrik als Ressource, `needs_judgment`), `miro-board-mcp` (Fachfehler, Bestätigung vor Schreiben) |
+## 2. Context
 
-## 3. Architektur
+| Item                    | Checked on 14 Nov 2026                                                                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP specification       | 2026-07-28: stateless; Sampling, Roots and Logging deprecated; Streamable HTTP; servers must validate the `Origin` header                              |
+| TypeScript SDK          | `@modelcontextprotocol/server` 2.4.0: `McpServer`, `createMcpHandler` (web-standard, stateless per request), `requireBearerAuth`, `hostHeaderValidationResponse`, `originValidationResponse`. `toNodeHandler` comes from `@modelcontextprotocol/node` 2.1.2 (peer `@modelcontextprotocol/server` ^2.4.0; brings `hono` and `@hono/node-server`) |
+| Database                | `node:sqlite` (built into Node.js, SQLite 3.53.4 locally, no warning on Node 26)                                                                      |
+| YAML parser             | `yaml` 2.9.1 (positions for every node; `js-yaml` has them only for syntax errors, D6)                                                               |
+| Runtime                 | Node.js 26 (LTS since October 2026), locally 26.7.0; Docker Desktop 29.6.2 locally                                                                   |
+| Models for this design  | `course-standards-mcp` (findings with line numbers, rubric as a resource, `needs_judgment`), `miro-board-mcp` (domain errors with hints, confirmation before writing) |
+
+## 3. Architecture
 
 ```
- Team ── ändert per Pull Request ──> dod/*.yaml (Team-Repository)
-                                          │ bei jedem Aufruf gelesen
- Mensch ── liest, entscheidet „done“      ▼
-    │                          dod-mcp (dieser Server, nur lesend)
-    ▼                          ├─ Ressourcen: dod://types, dod://type/{type},
- Client (Claude Code / Desktop)│              template://{type}, rubric://dod/{type}
-    │  Modell sammelt Belege   ├─ Tools:      get_dod, check_dod, lint_acceptance_criteria
-    │  über offizielle Server  ├─ dod/:       laden, validieren (Datei + Zeile), zusammenführen,
-    │  (SonarQube, Azure       │              Typ auflösen
-    │  DevOps, GitHub, Jira)   ├─ check/:     Belege prüfen (Form, Alter, Stand, Erwartung)
-    │  und übergibt sie        └─ lint/:      Regeln für Akzeptanzkriterien je Typ
-    └── JSON-RPC über stdio ──>
+ Team ── pull request ──> team repository: dod/*.yaml
+                                   │ mounted read-only into the container as /dod
+                                   ▼
+ ┌──────────────────────── Docker container (one per team) ────────────────────────┐
+ │ dod-mcp                                                                          │
+ │  HTTPS :8443  /mcp     TLS (mounted cert) → Host/Origin check → bearer token    │
+ │               /healthz no auth, no data                                          │
+ │  per request: sync     read /dod, validate (file + line), record new versions    │
+ │  resources            dod://types, dod://type/{type}, …/version/{n},             │
+ │                       template://{type}, rubric://dod/{type}                     │
+ │  tools (read-only)    get_dod, check_dod, lint_acceptance_criteria, diff_dod     │
+ │  store                DodStore interface → SQLite in /data (volume)              │
+ └──────────────────────────────────────────────────────────────────────────────────┘
+                                   ▲  HTTPS + Authorization: Bearer …
+ Person ── reads, decides "done"   │
+    │                              │
+ Client (Claude Code / Desktop) ───┘   the model collects evidence through the official
+                                       servers (SonarQube, Azure DevOps, GitHub, Jira)
+                                       and passes it to check_dod
 ```
 
-Der Server hält keinen Zustand. Er liest den DoD-Ordner bei jedem Aufruf (wenige kleine Dateien), sodass eine geänderte oder neue Datei ohne Neustart gilt.
+The same server also runs over **stdio** for local work and the fast tests (`DOD_TRANSPORT=stdio`); tools, resources and the store are identical (D13).
 
-## 4. Wer entscheidet was
+The server keeps no state in memory between requests. Before each request it reads the DoD folder (a few small files), validates it, and records any new file version in the store. A changed or new file therefore takes effect without a restart, and the history grows on its own.
 
-Drei Vokabulare, damit man am Wort sieht, wer entschieden hat (Skizze, Abschnitt 4):
+## 4. Who decides what
 
-| Wer                 | Wörter                                       | Wofür                                                                 |
-| ------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
-| Server              | `erfüllt` / `nicht erfüllt` / `braucht Urteil` | je Kriterium, aus Belegen und Regeln, reproduzierbar                  |
-| Modell im Client    | `plausibel` / `zweifelhaft`                  | je Urteilskriterium, mit Zitat und Fundstelle, nach `rubric://dod/{type}` |
-| Team (bzw. Rolle)   | „done“                                       | das Item; eine Rolle bestätigt Bestätigungskriterien                  |
+Three vocabularies, so you can see who made the call (sketch, section 4):
 
-Jedes Kriterium hat eine Prüfart (`check`), und die bestimmt, was der Server tun kann:
+| Who                  | Words                                   | For what                                                                                  |
+| -------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Server               | `met` / `not_met` / `needs_judgment`    | each criterion, from evidence and rules, reproducible                                     |
+| Model in the client  | `plausible` / `doubtful`                | each judgment criterion, with a quote and a location, by `rubric://dod/{type}`            |
+| Team (or a role)     | "done"                                  | the item; a named role confirms attestation criteria                                      |
 
-| `check`       | Server stellt fest                                                         | Ergebnis ohne Mängel | Wer entscheidet (`who_decides`)     |
-| ------------- | -------------------------------------------------------------------------- | -------------------- | ----------------------------------- |
-| `evidence`    | Form, Alter, Stand (Commit) und Wert des Belegs gegen die Erwartung         | `erfüllt`            | Server, aus dem Beleg               |
-| `judgment`    | nichts in der Sache; reicht Frage, Maßstab und mitgegebenes Material durch | `braucht Urteil`     | Modell schätzt ein, Team entscheidet |
-| `attestation` | ob eine Bestätigung der richtigen Rolle mit Zeitpunkt und Quelle vorliegt  | `erfüllt`            | die genannte Rolle                  |
+The concept sketch uses the German words _erfüllt_, _nicht erfüllt_ and _braucht Urteil_ for the server status; they map one to one to `met`, `not_met` and `needs_judgment`.
 
-## 5. Datenformat
+Each criterion has a check kind (`check`), which decides what the server can do:
 
-### 5.1 Ordner und Erkennung
+| `check`       | The server establishes                                                     | Result without defects | `who_decides`      |
+| ------------- | -------------------------------------------------------------------------- | ---------------------- | ------------------ |
+| `evidence`    | form, age, revision (commit) and value of the evidence against `expect`     | `met`                  | `server`           |
+| `judgment`    | nothing about the substance; passes on question, standard and material      | `needs_judgment`       | `model_then_team`  |
+| `attestation` | whether a confirmation by the right role is present, with time and source   | `met`                  | `role`             |
+
+## 5. Data format
+
+### 5.1 Folder and discovery
 
 ```text
 dod/
-  base.yaml            # gilt für alle Typen
-  types.yaml           # Ticket-Typ / Label → Aufgabentyp
-  software-dev.yaml    # je Aufgabentyp eine Datei
+  base.yaml            # applies to every type
+  types.yaml           # ticket type / label → task type
+  software-dev.yaml    # one file per task type
   dokument.yaml
   kundenanfrage.yaml
 ```
 
-- Jede andere `*.yaml` im Ordner ist eine Typ-Datei. **Der Typname ist der Dateiname** ohne Endung (`^[a-z][a-z0-9-]{0,39}$`), und das Feld `type` in der Datei muss ihm gleichen. Ein neuer Typ ist also genau eine neue Datei.
-- Der Ordner kommt aus `DOD_DIR` (Standard: `<repo>/dod`). In Ergebnissen erscheinen nur Dateinamen, nie absolute Pfade.
-- Jede Datei trägt `version` (ganze Zahl, wird bei jeder Änderung erhöht) und einen Kopfkommentar; fiktive Dateien sagen es in der ersten Zeile.
-- Die zusammengeführte Fassung eines Typs heißt zum Beispiel `kundenanfrage@3+base@2`. Diese Kennung steht in jedem Ergebnis, damit ein Bericht sagt, gegen welche Fassung geprüft wurde.
+- Every other `*.yaml` in the folder is a type file. **The type name is the file name** without extension (`^[a-z][a-z0-9-]{0,39}$`), and the file's `type` key must equal it. A new type is exactly one new file.
+- The folder comes from `DOD_DIR`. Results show file names only, never absolute paths.
+- Every file carries `version` (an integer, raised with every change of content) and a header comment; fictional files say so in their first line.
+- The effective DoD of a type is called, for example, `kundenanfrage@3+base@2`. This label appears in every result, so a report states which version it checked against.
+- Keys are English (as in the sketch's example); criterion texts, questions and templates are in the team's language, German in the fictional data.
 
-### 5.2 Basis und Typ-Datei
+### 5.2 Base and type files
 
 ```yaml
-# FIKTIVES BEISPIEL: dod/kundenanfrage.yaml
+# FICTIONAL EXAMPLE: dod/kundenanfrage.yaml
 type: kundenanfrage
 version: 3
 title: Kundenanfrage
-extends: base                 # Pflicht; ein Typ erbt immer die Basis
+extends: base                 # required; a type always inherits the base
 criteria:
   - id: FRIST
     text: Die erste Antwort ging innerhalb der vereinbarten Frist raus.
@@ -112,7 +127,7 @@ acceptance:
   template: |
     Fragen:
     1. …
-    Frist: TT.MM.JJJJ oder „2 Arbeitstage“
+    Frist: TT.MM.JJJJ oder "2 Arbeitstage"
   rules:
     - id: AK-FELDER
       kind: fields
@@ -121,58 +136,58 @@ acceptance:
         - { name: Frist, format: date_or_duration }
 ```
 
-**Felder eines Kriteriums.** Schlüssel englisch wie im Beispiel der Skizze, Inhalte deutsch.
+**Criterion keys:**
 
-| Feld            | `evidence` | `judgment` | `attestation` | Bedeutung                                                                      |
-| --------------- | ---------- | ---------- | ------------- | ------------------------------------------------------------------------------ |
-| `id`            | Pflicht    | Pflicht    | Pflicht       | `^[A-Z][A-Z0-9-]{1,39}$`, eindeutig über Basis und Typ                          |
-| `text`          | Pflicht    | Pflicht    | Pflicht       | das Kriterium, wie es im Team-Wiki stünde                                      |
-| `source`        | Pflicht    | –          | –             | fachliche Belegquelle, z. B. `sonarqube.quality_gate`                          |
-| `expect`        | Pflicht    | –          | –             | wann der Rohwert das Kriterium erfüllt (5.3)                                   |
-| `max_age_hours` | optional   | –          | optional      | ältere Belege sind `beleg_veraltet`; ohne Angabe keine Altersprüfung           |
-| `same_ref`      | optional   | –          | –             | Beleg muss zum Stand des Items gehören (Commit), sonst `beleg_anderer_stand`    |
-| `fetch_with`    | optional   | optional   | optional      | Tools, die den Beleg liefern (`server:tool`); Hinweis bei fehlendem Beleg (8.2) |
-| `question`      | –          | Pflicht    | –             | die Urteilsfrage, so gestellt, dass sie Lücken sucht                           |
-| `plausible_if`, `doubtful_if` | – | optional | –             | Maßstäbe für die Rubrik                                                        |
-| `role`          | –          | –          | Pflicht       | die Rolle, die bestätigt                                                       |
+| Key                           | `evidence` | `judgment` | `attestation` | Meaning                                                                          |
+| ----------------------------- | ---------- | ---------- | ------------- | -------------------------------------------------------------------------------- |
+| `id`                          | required   | required   | required      | `^[A-Z][A-Z0-9-]{1,39}$`, unique across base and type                            |
+| `text`                        | required   | required   | required      | the criterion as the team states it                                              |
+| `source`                      | required   | –          | –             | where the evidence comes from in business terms, e.g. `sonarqube.quality_gate`   |
+| `expect`                      | required   | –          | –             | when the raw value meets the criterion (5.3)                                     |
+| `max_age_hours`               | optional   | –          | optional      | older evidence is `evidence_stale`; without it, no age check                     |
+| `same_ref`                    | optional   | –          | –             | evidence must belong to the item's revision (commit), else `evidence_other_ref`   |
+| `fetch_with`                  | optional   | optional   | optional      | tools that deliver the evidence (`server:tool`); used in hints and checked (8.2) |
+| `question`                    | –          | required   | –             | the judgment question, phrased to look for gaps                                  |
+| `plausible_if`, `doubtful_if` | –          | optional   | –             | standards for the rubric                                                         |
+| `role`                        | –          | –          | required      | the role that confirms                                                           |
 
-Ein Feld, das zur Prüfart nicht passt (etwa `role` bei `evidence`), ist ein Fehler, kein stilles Ignorieren.
+A key that does not fit the check kind (say `role` on `evidence`) is an error, not silently ignored.
 
-Die Werkzeugnamen in `fetch_with` sind in den Beispieldaten Platzhalter (`tickets:`, `ci:`, `scm:`, `helpdesk:`, `docs:`). Echt sind nur `sonarqube:get_project_quality_gate_status` (SonarQube MCP Server, Skizze [S2]) und `course-standards:check_terms` (eigener Server).
+The tool names in the example data are placeholders (`tickets:`, `ci:`, `scm:`, `helpdesk:`, `docs:`). Only `sonarqube:get_project_quality_gate_status` (SonarQube MCP Server, sketch [S2]) and `course-standards:check_terms` (own server) are real.
 
-### 5.3 Erwartung an einen Beleg (`expect`)
+### 5.3 What evidence must show (`expect`)
 
-Ein fester, kleiner Satz von Operatoren, genau einer je Kriterium. Optional wählt `field` einen Schlüssel aus einem Rohwert, der ein Objekt ist.
+A fixed, small set of operators, exactly one per criterion. `field` optionally picks a key from a raw value that is an object.
 
-| Operator         | erfüllt, wenn                                                   | Beispiel                                              |
-| ---------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
-| `equals`         | Wert ist gleich (Text, Zahl oder Wahrheitswert)                 | `{ field: status, equals: OK }`                       |
-| `one_of`         | Wert ist einer der genannten                                    | `{ field: result, one_of: [succeeded, partiallySucceeded] }` |
-| `min`, `max`     | Zahl ≥ bzw. ≤ Grenze; bei Listen die Anzahl                     | `{ field: failed, max: 0 }`                           |
-| `present: true`  | Wert ist weder leer noch `null` noch leere Liste                | `{ present: true }`                                   |
-| `not_after`      | Zeitpunkt in `field` liegt nicht nach dem Zeitpunkt im genannten Feld | `{ field: first_response_at, not_after: due_at }` |
+| Operator        | Met when                                                                | Example                                                       |
+| --------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `equals`        | the value is equal (string, number or boolean)                          | `{ field: status, equals: OK }`                               |
+| `one_of`        | the value is one of the listed values                                   | `{ field: result, one_of: [succeeded, partiallySucceeded] }`  |
+| `min`, `max`    | number ≥ or ≤ the bound; for lists, their length                        | `{ field: failed, max: 0 }`                                   |
+| `present: true` | the value is not empty, not `null`, not an empty list                   | `{ present: true }`                                           |
+| `not_after`     | the timestamp in `field` is not later than the timestamp in the named field | `{ field: first_response_at, not_after: due_at }`         |
 
-Keine regulären Ausdrücke aus YAML (D7). Ein Rohwert, auf den der Operator nicht passt (fehlendes Feld, Text statt Zahl), ergibt `beleg_ungueltig`.
+No regular expressions from YAML (D7). A raw value the operator cannot apply to (missing field, text instead of a number) gives `evidence_invalid`.
 
-### 5.4 Vorlage und Regeln für Akzeptanzkriterien (`acceptance`)
+### 5.4 Template and rules for acceptance criteria (`acceptance`)
 
-- `template` (nur Typ-Dateien): Markdown-Gerüst, ausgeliefert als `template://{type}`.
-- `rules` (Basis und Typ): Liste von Regeln mit `id` (`^AK-[A-Z0-9-]+$`), `kind` und Parametern. Die Basis-Regeln gelten für jeden Typ; ein Typ ergänzt eigene.
+- `template` (type files only): a Markdown skeleton, served as `template://{type}`.
+- `rules` (base and type): rules with `id` (`^AK-[A-Z0-9-]+$`), `kind` and parameters. Base rules apply to every type; a type adds its own.
 
-| `kind`               | Parameter                                         | Prüft                                                                                      |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `gherkin`            | –                                                 | jedes Szenario hat Gegeben/Angenommen, Wenn und Dann (DE und EN), in dieser Reihenfolge     |
-| `observable_then`    | `phrases`                                         | Dann-Schritte ohne Unbeobachtbares („versteht“, „ist zufrieden“, „funktioniert korrekt“)    |
-| `vague_words`        | `words`                                           | vage Wörter in jeder Zeile („schnell“, „usw.“)                                             |
-| `numbers_need_units` | `units`                                           | Zahlen ohne Einheit oder Bezugswort („unter 2“ statt „unter 2 s“)                          |
-| `fields`             | `fields: [{name, list?, min_items?, format?}]`    | Pflichtfelder wie `Zweck:`, `Zielgruppe:`; Listenlänge; Format `date`, `duration`, `date_or_duration` |
+| `kind`               | Parameters                                    | Checks                                                                                           |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `gherkin`            | –                                             | every scenario has Given, When and Then (German and English keywords), in that order             |
+| `observable_then`    | `phrases`                                     | Then steps contain nothing unobservable ("versteht", "ist zufrieden", "funktioniert korrekt")     |
+| `vague_words`        | `words`                                       | vague words in any line ("schnell", "usw.")                                                      |
+| `numbers_need_units` | `units`                                       | numbers without a unit or a counted noun ("unter 2" instead of "unter 2 s")                      |
+| `fields`             | `fields: [{name, list?, min_items?, format?}]` | required fields such as `Zweck:`, `Zielgruppe:`; list length; format `date`, `duration`, `date_or_duration` |
 
-Eine neue Regelart ist eine Codeänderung, ein neuer Typ mit vorhandenen Regelarten nicht (D7).
+A new rule kind is a code change; a new type that uses existing rule kinds is not (D7).
 
-### 5.5 Zuordnung (`types.yaml`)
+### 5.5 Mapping (`types.yaml`)
 
 ```yaml
-# FIKTIVES BEISPIEL
+# FICTIONAL EXAMPLE
 version: 1
 mappings:
   software-dev: { ticket_types: [Story, Bug], labels: [code] }
@@ -180,71 +195,100 @@ mappings:
   kundenanfrage: { ticket_types: [Anfrage], labels: [kunde] }
 ```
 
-- Vergleich ohne Groß-/Kleinschreibung, Leerzeichen am Rand abgeschnitten.
-- Ein Ticket-Typ oder Label darf nur einem Aufgabentyp zugeordnet sein; sonst ist `types.yaml` ungültig (mit Zeile).
-- Ein Schlüssel ohne passende Typ-Datei ist ein Fehler. Eine Typ-Datei ohne Zuordnung ist erlaubt; sie ist dann nur mit ausdrücklichem `type` erreichbar und in `dod://types` als `mapped: false` markiert.
+- Matching ignores case and surrounding whitespace.
+- A ticket type or label may map to one task type only; otherwise `types.yaml` is invalid (with line).
+- A key without a matching type file is an error. A type file without a mapping is allowed; it is then reachable only with an explicit `type` and marked `mapped: false` in `dod://types`.
 
-### 5.6 Vererbung: nur ergänzen
+### 5.6 Inheritance: add only
 
-Ein Typ erbt alle Kriterien und Regeln der Basis und darf nur ergänzen. Durchgesetzt wird das an drei Stellen:
+A type inherits every criterion and rule of the base and may only add. Three things enforce it:
 
-1. **Striktes Schema.** Es gibt keinen Schlüssel zum Entfernen oder Ändern. Jeder unbekannte Schlüssel ist ein Fehler. Schlüssel, die nach Entfernen oder Überschreiben aussehen (`remove`, `exclude`, `omit`, `without`, `override`, `replace`, auch im Plural), bekommen einen eigenen, klaren Fehlercode.
-2. **ID-Kollision.** Ein Kriterium oder eine Regel mit einer ID aus der Basis gilt als Überschreiben, auch wenn der Inhalt gleich ist.
-3. **`extends: base` ist Pflicht.** Fehlt es oder steht dort etwas anderes, hätte der Typ die Basis abgelegt.
+1. **Strict schema.** There is no key to remove or change anything, and every unknown key is an error. Keys that look like removal or override (`remove`, `exclude`, `omit`, `without`, `override`, `replace`, also plural) get their own, clear error code.
+2. **Id collision.** A criterion or rule with an id from the base counts as an override, even with identical content.
+3. **`extends: base` is required.** Without it, or with another value, the type would have dropped the base.
 
-**Validierungsfehler.** Jeder Fehler hat Datei, Zeile, Spalte, Code und Meldung; bei Kollisionen zusätzlich die Stelle in der Basis. Die Zeile kommt vom YAML-Knoten (bei fehlenden Pflichtfeldern: der Knoten des Eltern-Objekts).
+**Validation errors.** Each error has file, line, column, code and message; collisions also name the location in the base. The line comes from the YAML node (for a missing key: the node of the parent object).
 
-| Code                              | Wann                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `yaml_syntax`                     | Datei ist kein gültiges YAML                                            |
-| `feld_fehlt`                      | Pflichtfeld fehlt (auch prüfartabhängig: `question`, `role`, `expect`)  |
-| `unbekanntes_feld`                | Schlüssel nicht im Schema oder nicht passend zur Prüfart                |
-| `falscher_wert`                   | falscher Typ, unbekannte Prüfart, mehr als ein Operator in `expect`     |
-| `basis_kriterium_ueberschrieben`  | Kriterium- oder Regel-ID der Basis im Typ; `override`/`replace`         |
-| `basis_kriterium_entfernt`        | `remove`/`exclude`/`omit`/`without`; `extends` fehlt oder ist nicht `base` |
-| `id_doppelt`                      | dieselbe ID zweimal in einer Datei                                      |
-| `typ_passt_nicht_zur_datei`       | `type` ungleich Dateiname, oder Dateiname verletzt das Muster           |
-| `zuordnung_ungueltig`             | `types.yaml`: unbekannter Typ, Ticket-Typ oder Label doppelt vergeben   |
+| Code                         | When                                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `yaml_syntax`                | the file is not valid YAML                                                               |
+| `missing_key`                | a required key is missing (also per check kind: `question`, `role`, `expect`)            |
+| `unknown_key`                | a key is not in the schema or does not fit the check kind                                |
+| `invalid_value`              | wrong type, unknown check kind, more than one operator in `expect`                        |
+| `base_criterion_overridden`  | a base criterion or rule id in a type file; `override` or `replace`                      |
+| `base_criterion_removed`     | `remove`, `exclude`, `omit`, `without`; `extends` missing or not `base`                   |
+| `duplicate_id`               | the same id twice in one file                                                            |
+| `type_name_mismatch`         | `type` differs from the file name, or the file name breaks the pattern                   |
+| `invalid_mapping`            | `types.yaml`: unknown type, ticket type or label assigned twice                          |
+| `version_not_bumped`         | the content changed, but `version` is one the store already holds with other content (6.2) |
+| `version_regressed`          | `version` is lower than the highest version the store holds for this file                |
 
-Beispiel (Tool-Antwort, Text):
+Example (tool result, text):
 
 ```text
-dod_ungueltig: Die DoD für software-dev ist ungültig (1 Fehler).
-  software-dev.yaml:31:7 basis_kriterium_ueberschrieben: Kriterium ZWEITE-PERSON steht schon in base.yaml:24. Ein Typ darf die Basis nur ergänzen.
-Hint: Gilt das Kriterium zusätzlich, gib ihm eine eigene ID. Soll sich die Basis ändern, ändere base.yaml per Pull Request.
+invalid_dod: The DoD for software-dev is invalid (1 error).
+  software-dev.yaml:31:7 base_criterion_overridden: Criterion ZWEITE-PERSON is already defined in base.yaml:24. A type may only add to the base.
+Hint: If the criterion applies in addition, give it its own id. To change the base, change base.yaml by pull request.
 ```
 
-**Folgen eines Fehlers.** Eine ungültige Typ-Datei legt nur diesen Typ lahm. Sie bleibt als Ressource sichtbar und zeigt dort ihre Fehler (D5); die Tools melden für diesen Typ `dod_ungueltig`. Ist `base.yaml` ungültig, sind alle Typen ungültig. Ist `types.yaml` ungültig, geht die Auflösung über Ticket-Typ und Labels nicht mehr, ein ausdrückliches `type` schon.
+**Effect of an error.** An invalid type file disables only that type. It stays visible as a resource and shows its errors there (D5); the tools report `invalid_dod` for that type. An invalid `base.yaml` makes every type invalid. An invalid `types.yaml` stops resolution by ticket type and labels, but an explicit `type` still works.
 
-## 6. Typ-Auflösung
+## 6. Database
 
-Eingabe (bei `get_dod`, `check_dod`, `lint_acceptance_criteria` gleich): `type`, `ticket_type`, `labels`.
+### 6.1 What it stores
 
-1. Aus `ticket_type` und jedem Label die Kandidaten nach `types.yaml` sammeln.
-2. **Ohne `type`:** genau ein Kandidat → dieser Typ (`resolution.via: ticket_type` bzw. `label`). Kein Kandidat → `typ_unbekannt`. Mehrere → `typ_mehrdeutig`.
-3. **Mit `type`:** Er muss eine gültige oder ungültige Typ-Datei sein, sonst `typ_unbekannt`. Ergeben Ticket-Typ und Labels Kandidaten, muss `type` darunter sein, sonst `typ_widerspruch`. So löst ein ausdrückliches `type` eine Mehrdeutigkeit auf, sichtbar als `resolution.via: explicit` mit allen Kandidaten (Frage F2).
-4. Nichts angegeben → `typ_fehlt`.
+The YAML files stay the source of truth. The store records **every version of every file the server has seen**, so earlier versions can be read and compared after the files have moved on.
 
-Es gibt keinen Standardtyp. Beispiele mit den fiktiven Daten: `ticket_type: Story` → `software-dev`; `ticket_type: Epic` → `typ_unbekannt` (Hint nennt bekannte Ticket-Typen und Labels); `ticket_type: Story, labels: [doku]` → `typ_mehrdeutig` (Hint: „Story → software-dev, doku → dokument. Labels im Ticket korrigieren oder `type` mit einem der Kandidaten angeben.“).
+| Table               | Columns                                                                                    | Content                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `dod_file_versions` | `file`, `kind` (`base`/`type`/`mapping`), `version`, `content_sha256`, `content`, `first_seen_at`; key (`file`, `version`) | the full YAML text of each version, and a hash of its normalised content |
+| `dod_editions`      | `type`, `type_version`, `base_version`, `first_seen_at`; key (`type`, `type_version`, `base_version`) | which combinations of type and base the server has served                  |
 
-## 7. Ressourcen
+- It stores the **file text, not a parsed model**: an older version is read back through the same loader as a current file. A change of the internal model needs no data migration.
+- The hash covers the parsed, normalised content, so a change in comments or formatting alone is not a new version.
+- No evidence, no check results, no acceptance criteria, no request data. The store holds only what is already in the team repository (answer 1, section 18).
+- Schema migrations are numbered in code and tracked with `PRAGMA user_version`.
 
-| URI                     | Typ                | Inhalt                                                                                                    |
-| ----------------------- | ------------------ | --------------------------------------------------------------------------------------------------------- |
-| `dod://types`           | `application/json` | Basis (Datei, Version, Anzahl Kriterien), je Typ: Titel, Versionen, Fassung, URI, Zuordnung, gültig ja/nein; Fehler |
-| `dod://type/{type}`     | `application/json` | **eine Ressource je Typ-Datei**: Basis und Typ zusammengeführt, jedes Kriterium mit `origin` (`base` oder Typ), Datei und Zeile; Regeln mit Herkunft; Verweise auf Vorlage und Rubrik |
-| `template://{type}`     | `text/markdown`    | Vorlage für Akzeptanzkriterien und die Liste der Regeln, die `lint_acceptance_criteria` für diesen Typ anwendet |
-| `rubric://dod/{type}`   | `text/markdown`    | Urteilskriterien aus Basis und Typ: Frage, Maßstäbe `plausibel`/`zweifelhaft`, Anleitung (Zitat Pflicht); Bestätigungen als „nicht vom Modell zu entscheiden: Rolle X“ |
+### 6.2 Sync before each request
 
-- Die drei Typ-Ressourcen sind Ressourcen-Templates mit `list`-Callback: `resources/list` zählt jede Typ-Datei im Ordner auf, ohne Codeänderung für neue Typen. `complete` ergänzt `{type}`.
-- Eine ungültige Typ-Datei wird ebenfalls gelistet (Titel mit „ungültig“). Lesen liefert `{ type, valid: false, errors: [...] }` bzw. eine Markdown-Fehlerliste, damit man beim Lesen sieht, welche Zeile zu ändern ist (D5).
-- Ein Typ ohne Datei ergibt `ResourceNotFoundError` (JSON-RPC −32602), wie in `course-standards-mcp`.
-- Rubrik und Vorlage entstehen aus derselben Datei, gegen die der Server prüft; Prüfung und Lesestoff können nicht auseinanderlaufen.
-- `dod://type/{type}/version/{n}` (frühere Fassungen) bleibt offen, zusammen mit `diff_dod` (Abschnitt 15).
+1. Read and validate the folder (section 5).
+2. For each valid file: if (`file`, `version`) is new, insert it. If it exists with the same hash, do nothing. If it exists with another hash, the file is invalid (`version_not_bumped`, line of `version:`). If `version` is lower than the highest stored one, the file is invalid (`version_regressed`).
+3. For each valid type: record the edition (`type_version`, current `base_version`) if new.
+
+Only valid files are recorded, so the history contains agreements that were actually in force. Inserts use `INSERT OR IGNORE` and run in one transaction; repeating the sync changes nothing (idempotent). The sync writes only to the server's own store, never to the files or another system, so the tools keep `readOnlyHint: true` (D10).
+
+**When the store fails** (disk full, read-only volume): the server keeps serving the current files, logs the error, marks `history: unavailable` in `dod://types`, and only `diff_dod` and the version resource fail with `history_unavailable`.
+
+### 6.3 Versions of a type
+
+`dod://type/{type}/version/{n}` means: **the type file at version n, together with the base version that was in force when the server first saw version n.** The result names the exact combination (`software-dev@3+base@1`). A base change while a type stayed at version n shows up in `diff_dod` with `origin: base`, and in `diff_dod` for `type: base`.
+
+The history starts with the first sync. Versions older than that are only in Git; importing them is an open point (section 16).
+
+### 6.4 Configurable backend
+
+```
+DOD_DATABASE=sqlite:/data/dod.sqlite     # container default
+DOD_DATABASE=sqlite:local/dod.sqlite     # stdio default (local/ is git-ignored)
+DOD_DATABASE=sqlite::memory:             # tests
+```
+
+The server uses the store only through a narrow interface (`DodStore`: `recordFileVersion`, `recordEdition`, `latestVersion`, `listVersions`, `getFileVersion`, `getEdition`). Version 1 implements `sqlite:` with `node:sqlite` (no native addon, no extra dependency). Another backend, for example `postgres:`, is a new implementation of the same interface; any other scheme stops the server at start with a clear message. SQLite in WAL mode serves one container; several replicas on one database would need such a server-based backend.
+
+## 7. Type resolution
+
+The input is the same for `get_dod`, `check_dod` and `lint_acceptance_criteria`: `type`, `ticket_type`, `labels`.
+
+1. Collect candidates for `ticket_type` and for every label from `types.yaml`.
+2. **Without `type`:** exactly one candidate → that type (`resolution.via: ticket_type` or `label`). No candidate → `unknown_type`. Several → `ambiguous_type`.
+3. **With `type`:** it must be a type file (valid or not), otherwise `unknown_type`. If ticket type and labels give candidates, `type` must be one of them, otherwise `type_conflict`. So an explicit `type` resolves an ambiguity, visibly, as `resolution.via: explicit` with all candidates (question F2).
+4. Nothing given → `type_missing`.
+
+There is no default type. Examples with the fictional data: `ticket_type: Story` → `software-dev`; `ticket_type: Epic` → `unknown_type` (the hint lists known ticket types and labels); `ticket_type: Story, labels: [doku]` → `ambiguous_type` (hint: "Story → software-dev, doku → dokument. Fix the labels in the ticket or pass `type` with one of the candidates.").
 
 ## 8. Tools
 
-Alle drei sind nur lesend (`readOnlyHint: true`, `idempotentHint: true`, `openWorldHint: false`). Jedes liefert eine kurze Markdown-Zusammenfassung, das JSON als Text und `structuredContent` passend zu einem `outputSchema` (zod v4). Fachfehler kommen als `isError` mit `code`, Meldung und `hint`, ohne `structuredContent` (Erfahrung aus `miro-board-mcp`: der Inspector prüft es sonst gegen das Schema).
+All four are read-only (`readOnlyHint: true`, `idempotentHint: true`, `openWorldHint: false`). Each returns a short Markdown summary, the JSON as text, and `structuredContent` that matches an `outputSchema` (zod v4). Domain errors come as `isError` with `code`, message and `hint`, without `structuredContent` (lesson from `miro-board-mcp`: the Inspector validates it against the schema otherwise).
 
 ### 8.1 `get_dod`
 
@@ -256,21 +300,21 @@ input = z.object({
 });
 ```
 
-- Mit Angaben: die zusammengeführte DoD des aufgelösten Typs, dieselbe Form wie `dod://type/{type}`, plus `resolution`. Für jedes Beleg-Kriterium stehen `source`, `expect`, `max_age_hours`, `same_ref` und `fetch_with` darin, damit der Agent weiß, was er sammeln muss.
-- Ohne Angaben: die Übersicht wie `dod://types`. Das hilft Clients, die Ressourcen nicht von sich aus lesen.
-- Fachfehler: `typ_unbekannt`, `typ_mehrdeutig`, `typ_widerspruch`, `dod_ungueltig`, `dod_nicht_lesbar`.
+- With input: the merged DoD of the resolved type, the same shape as `dod://type/{type}`, plus `resolution`. Every evidence criterion carries `source`, `expect`, `max_age_hours`, `same_ref` and `fetch_with`, so the agent knows what to collect.
+- Without input: the overview, like `dod://types`. This helps clients that do not read resources on their own.
+- Domain errors: `unknown_type`, `ambiguous_type`, `type_conflict`, `invalid_dod`, `dod_unavailable`.
 
 ### 8.2 `check_dod`
 
 ```ts
 const Evidence = z.object({
-  criterion: z.string(),                  // Kriterium-ID
-  source: z.string().max(200),            // System, z. B. "sonarqube"
-  tool: z.string().max(200),              // MCP-Tool, das den Wert geliefert hat
-  arguments: z.record(z.string(), z.unknown()).optional(), // zum Nachvollziehen
-  retrieved_at: z.string(),               // ISO 8601 mit Zeitzone
-  raw: z.unknown(),                       // Rohwert, wie das Tool ihn lieferte (≤ 10 KB serialisiert)
-  ref: z.string().max(100).optional(),    // Stand, zu dem der Wert gehört (Commit)
+  criterion: z.string(),                  // criterion id
+  source: z.string().max(200),            // system, e.g. "sonarqube"
+  tool: z.string().max(200),              // MCP tool that delivered the value
+  arguments: z.record(z.string(), z.unknown()).optional(), // to retrace the call
+  retrieved_at: z.string(),               // ISO 8601 with time zone
+  raw: z.unknown(),                       // raw value as the tool returned it (≤ 10 KB serialised)
+  ref: z.string().max(100).optional(),    // revision the value belongs to (commit)
   link: z.string().url().max(500).optional(),
 });
 input = z.object({
@@ -279,37 +323,37 @@ input = z.object({
     type: z.string().optional(),
     ticket_type: z.string().optional(),
     labels: z.array(z.string()).max(50).optional(),
-    ref: z.string().max(100).optional(),  // aktueller Commit des Items
+    ref: z.string().max(100).optional(),  // the item's current commit
   }),
   evidence: z.array(Evidence).max(100).default([]),
-  as_of: z.string().optional(),           // Bezugszeitpunkt fürs Alter; Standard: jetzt
+  as_of: z.string().optional(),           // reference time for age; default: now
 });
 ```
 
-Zeitpunkte prüft der Server selbst und nicht im Schema, damit ein fehlerhafter Beleg nur sein Kriterium trifft und nicht den ganzen Aufruf.
+The server checks timestamps itself, not in the schema, so a broken piece of evidence affects only its criterion and not the whole call.
 
-**Ablauf je Kriterium.** Liegen mehrere Belege vor, entscheidet der jüngste mit lesbarem Zeitpunkt; die anderen nennt der Befund `mehrere_belege`.
+**Per criterion.** If there are several pieces of evidence, the most recent one with a readable timestamp decides; the finding `multiple_evidence` names the others.
 
-| Prüfart       | Lage                                                                 | Status           | Befund                     |
-| ------------- | -------------------------------------------------------------------- | ---------------- | -------------------------- |
-| `evidence`, `attestation` | kein Beleg                                               | `nicht erfüllt`  | `beleg_fehlt` bzw. bei Bestätigung `bestaetigung_fehlt` (F1) |
-| `evidence`, `attestation` | Zeitpunkt unlesbar, ohne Zeitzone oder nach `as_of`; Rohwert passt nicht zu `expect` | `nicht erfüllt` | `beleg_ungueltig` |
-| `evidence`, `attestation` | älter als `max_age_hours`                                | `nicht erfüllt`  | `beleg_veraltet`           |
-| `evidence`    | `same_ref`, aber Item oder Beleg ohne `ref`                          | `nicht erfüllt`  | `stand_fehlt`              |
-| `evidence`    | `same_ref` und `ref` verschieden (gleich auch, wenn einer Präfix des anderen ist, ab 7 Zeichen) | `nicht erfüllt` | `beleg_anderer_stand` |
-| `evidence`    | Wert erfüllt `expect` nicht                                          | `nicht erfüllt`  | `erwartung_verfehlt`       |
-| `attestation` | `raw.role` ist nicht die verlangte Rolle, oder `raw.by` fehlt         | `nicht erfüllt`  | `rolle_passt_nicht`        |
-| `evidence`, `attestation` | sonst einwandfrei, aber `tool` nicht in `fetch_with`     | `braucht Urteil` | `quelle_unerwartet`        |
-| `evidence`, `attestation` | einwandfrei                                              | `erfüllt`        | –                          |
-| `judgment`    | immer; mitgegebene Belege erscheinen als Material                    | `braucht Urteil` | –                          |
+| Check kind                | Situation                                                                                   | Status           | Finding                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ---------------- | --------------------------------------------- |
+| `evidence`, `attestation` | no evidence                                                                                 | `not_met`        | `evidence_missing` / `attestation_missing` (F1) |
+| `evidence`, `attestation` | timestamp unreadable, without time zone, or after `as_of`; raw value does not fit `expect`  | `not_met`        | `evidence_invalid`                            |
+| `evidence`, `attestation` | older than `max_age_hours`                                                                  | `not_met`        | `evidence_stale`                              |
+| `evidence`                | `same_ref`, but item or evidence has no `ref`                                               | `not_met`        | `ref_missing`                                 |
+| `evidence`                | `same_ref` and the refs differ (equal also when one is a prefix of the other, from 7 characters) | `not_met`   | `evidence_other_ref`                          |
+| `evidence`                | the value does not meet `expect`                                                            | `not_met`        | `expectation_not_met`                         |
+| `attestation`             | `raw.role` is not the required role, or `raw.by` is empty                                    | `not_met`        | `role_mismatch`                               |
+| `evidence`, `attestation` | otherwise sound, but `tool` is not in `fetch_with`                                          | `needs_judgment` | `unexpected_source`                           |
+| `evidence`, `attestation` | sound                                                                                       | `met`            | –                                             |
+| `judgment`                | always; evidence passed for it appears as material                                          | `needs_judgment` | –                                             |
 
-- **Werkzeugabgleich.** Verglichen wird nur der Tool-Name nach dem letzten `:` oder `__`. So passen `mcp__sonarqube__get_project_quality_gate_status`, `sonarqube:get_project_quality_gate_status` und `get_project_quality_gate_status` gleichermaßen; den Servernamen vergibt jeder Client selbst.
-- **Hinweis je Befund.** Bei `beleg_fehlt`, `beleg_veraltet`, `beleg_anderer_stand` und `stand_fehlt` sagt `hint`, mit welchem Tool und für welchen Stand der Beleg zu holen ist, z. B. „Mit get_project_quality_gate_status für Commit 9f2c1ab holen.“ Bei `bestaetigung_fehlt`: „Bestätigung der Rolle Betrieb einholen; der Agent bestätigt nicht selbst.“
-- **Reproduzierbar.** `as_of` steht im Ergebnis. Gleiche Eingabe mit gleichem `as_of` ergibt dieselbe Ausgabe.
-- **Belege zu unbekannten Kriterien** sind kein Fehler; sie stehen unter `unused_evidence`.
-- **Kein Gesamtstatus.** Die Zusammenfassung zählt nur. Der Text endet mit „Ob DEMO-42 done ist, entscheidet das Team.“
+- **Tool matching** compares only the tool name after the last `:` or `__`. `mcp__sonarqube__get_project_quality_gate_status`, `sonarqube:get_project_quality_gate_status` and `get_project_quality_gate_status` all match; every client names its servers itself.
+- **Hint per finding.** For `evidence_missing`, `evidence_stale`, `evidence_other_ref` and `ref_missing`, the `hint` says which tool to use and for which revision, e.g. "Fetch with get_project_quality_gate_status for commit 9f2c1ab." For `attestation_missing`: "Ask the role Betrieb to confirm; the agent does not confirm on its own."
+- **Reproducible.** `as_of` is part of the result. The same input with the same `as_of` gives the same output.
+- **Evidence for unknown criteria** is not an error; it is listed under `unused_evidence`.
+- **No overall status.** The summary only counts. The text ends with "Whether DEMO-42 is done is the team's decision."
 
-Ausgabe (gekürzt, fiktiv):
+Output (shortened, fictional):
 
 ```jsonc
 {
@@ -318,34 +362,34 @@ Ausgabe (gekürzt, fiktiv):
   "dod_version": "software-dev@4+base@2",
   "resolution": { "via": "ticket_type", "candidates": ["software-dev"] },
   "as_of": "2026-11-14T10:00:00Z",
-  "summary": { "criteria": 9, "erfuellt": 4, "nicht_erfuellt": 3, "braucht_urteil": 2 },
+  "summary": { "criteria": 9, "met": 4, "not_met": 3, "needs_judgment": 2 },
   "criteria": [
     {
       "id": "QUALITY-GATE", "origin": "software-dev", "check": "evidence",
       "text": "Das Quality Gate ist für den geprüften Commit grün.",
-      "status": "nicht erfüllt",
+      "status": "not_met",
       "evidence": { "source": "sonarqube", "tool": "get_project_quality_gate_status",
                     "retrieved_at": "2026-11-14T09:40:00Z", "age_hours": 0.3,
                     "raw": "{\"status\":\"OK\"}", "ref": "71be0d4" },
-      "findings": [{ "code": "beleg_anderer_stand",
-                     "message": "Der Beleg gehört zu 71be0d4, das Item steht auf 9f2c1ab." }],
-      "hint": "Mit get_project_quality_gate_status für Commit 9f2c1ab holen.",
-      "who_decides": "Server, aus dem Beleg"
+      "findings": [{ "code": "evidence_other_ref",
+                     "message": "The evidence belongs to 71be0d4; the item is at 9f2c1ab." }],
+      "hint": "Fetch with get_project_quality_gate_status for commit 9f2c1ab.",
+      "who_decides": "server"
     },
     {
       "id": "FOLGEARBEIT", "origin": "base", "check": "judgment",
-      "status": "braucht Urteil",
+      "status": "needs_judgment",
       "question": "Welche offene Folgearbeit aus dem Ergebnis ist noch nicht als eigenes Item erfasst?",
       "rubric": "rubric://dod/software-dev",
-      "who_decides": "Modell schätzt ein, Team entscheidet"
+      "who_decides": "model_then_team"
     }
   ],
   "unused_evidence": [],
-  "limits": ["Belege stammen vom Agenten; der Server prüft Form, Alter, Stand und Wert, nicht ihre Echtheit."]
+  "limits": ["Evidence comes from the agent; the server checks its form, age, revision and value, not its authenticity."]
 }
 ```
 
-Rohwerte werden in der Ausgabe auf 200 Zeichen gekürzt.
+Raw values are cut to 200 characters in the output.
 
 ### 8.3 `lint_acceptance_criteria`
 
@@ -358,165 +402,261 @@ input = z.object({
 });
 ```
 
-Nur Text, kein Dateipfad: Akzeptanzkriterien stehen im Ticket, der Agent übergibt sie (D14). Der Server wendet die Regeln aus Basis und Typ an und meldet jeden Befund mit Zeile (1-basiert, bezogen auf `text`), Spalte, Auszug (≤ 120 Zeichen), Regel-ID, Herkunft, Meldung und Hinweis. Fehlt ein Feld ganz, zeigt die Zeile auf Zeile 1.
+Text only, no file path: acceptance criteria live in the ticket, and the agent passes them (D14). The server applies the rules of base and type and reports each finding with line (1-based, relative to `text`), column, excerpt (≤ 120 characters), rule id, origin, message and hint. A field that is missing entirely points to line 1.
 
-| Regelart             | Befund                                         | Schwere   |
-| -------------------- | ---------------------------------------------- | --------- |
-| `gherkin`            | `kein_szenario`, `gwt_unvollstaendig`          | `fehler`  |
-| `gherkin`            | `reihenfolge` (Gegeben nach Wenn, Wenn nach Dann) | `warnung` |
-| `observable_then`    | `dann_nicht_beobachtbar`                       | `warnung` |
-| `vague_words`        | `vages_wort`                                   | `warnung` |
-| `numbers_need_units` | `zahl_ohne_einheit`                            | `warnung` |
-| `fields`             | `feld_fehlt`, `feld_leer`, `liste_zu_kurz`, `feld_format` | `fehler` |
+| Rule kind            | Finding                                                        | Severity  |
+| -------------------- | -------------------------------------------------------------- | --------- |
+| `gherkin`            | `no_scenario`, `incomplete_scenario`                           | `error`   |
+| `gherkin`            | `step_order` (Given after When, When after Then)               | `warning` |
+| `observable_then`    | `unobservable_then`                                            | `warning` |
+| `vague_words`        | `vague_word`                                                   | `warning` |
+| `numbers_need_units` | `number_without_unit`                                          | `warning` |
+| `fields`             | `field_missing`, `field_empty`, `list_too_short`, `field_format` | `error` |
 
-**Erkennung, deterministisch:**
+**Deterministic recognition:**
 
-- **Szenarien.** Eine Zeile `Szenario:`/`Scenario:` beginnt ein Szenario. Ohne solche Zeilen ist jeder durch Leerzeilen getrennte Block mit mindestens einem Schritt ein Szenario. Schritte erkennt der Server am Zeilenanfang (nach Aufzählungszeichen): `Angenommen`, `Gegeben (sei)`, `Given`; `Wenn`, `When`; `Dann`, `Then`; `Und`, `Aber`, `And`, `But` setzen den vorigen Schritt fort.
-- **Wörter und Phrasen.** Ohne Groß-/Kleinschreibung, an Wortgrenzen (Unicode), wörtlich, nicht als regulärer Ausdruck.
-- **Zahlen.** Nur Wörter, die ganz aus einer Zahl bestehen (`2`, `0,5`, `30%`). Daten, Uhrzeiten, Versionen, IDs und Aufzählungsnummern am Zeilenanfang zählen nicht. In Ordnung ist eine Zahl, an der eine Einheit hängt oder auf die eine Einheit aus `units` oder ein großgeschriebenes Wort folgt (deutsches Substantiv: „3 Einträge“). Bei Bereichen („2 bis 5 Sekunden“, „2–5 s“) zählt die Einheit am Ende.
-- **Felder.** Eine Zeile `Name:` (auch als Aufzählung oder fett). Listen sind die Aufzählungszeilen bis zur nächsten Leerzeile oder zum nächsten Feld.
+- **Scenarios.** A line `Szenario:` or `Scenario:` starts a scenario. Without such lines, every block separated by blank lines that contains at least one step is a scenario. Steps are recognised at the start of a line (after a list marker): `Angenommen`, `Gegeben (sei)`, `Given`; `Wenn`, `When`; `Dann`, `Then`; `Und`, `Aber`, `And`, `But` continue the previous step.
+- **Words and phrases.** Case-insensitive, at Unicode word boundaries, literal, never as a regular expression.
+- **Numbers.** Only tokens that consist entirely of a number (`2`, `0,5`, `30%`). Dates, times, versions, ids and list numbers at the start of a line do not count. A number is fine if a unit is attached, or if a unit from `units` or a capitalised word follows (a German noun: "3 Einträge"). For ranges ("2 bis 5 Sekunden", "2–5 s") the unit at the end counts.
+- **Fields.** A line `Name:` (also as a list item or in bold). A list is the list lines up to the next blank line or the next field.
 
-Ausgabe: `{ type, dod_version, resolution, rules_applied: [{id, kind, origin}], summary: {fehler, warnung}, findings: [...], truncated }`, höchstens 100 Befunde.
+Output: `{ type, dod_version, resolution, rules_applied: [{id, kind, origin}], summary: {error, warning}, findings: [...], truncated }`, at most 100 findings.
 
-## 9. Fachfehler und Protokollfehler
+### 8.4 `diff_dod`
 
-Wie in den beiden Vorbildern: Ein **Fachfehler** heißt, das Tool hat die Anfrage verstanden, kann sie mit dieser Eingabe aber nicht erledigen. Er kommt als Tool-Ergebnis mit `isError: true`, stabilem `code`, Meldung und `hint`, damit sich der Agent korrigiert. Ein **Protokollfehler** (unbekanntes Tool, kaputte Anfrage, unbekannte Ressource) kommt als JSON-RPC-Fehler. Unerwartete Ausnahmen fängt der Server, schreibt den Stack nach stderr und meldet nur „internal_error, siehe Server-Log“.
+```ts
+input = z.object({
+  type: z.string(),                       // a type name, or "base"
+  from: z.number().int().positive().optional(), // default: the version before `to`
+  to: z.number().int().positive().optional(),   // default: the current version
+});
+```
 
-| Code               | Wann                                                         | Hint                                                                  |
-| ------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `typ_fehlt`        | weder `type` noch `ticket_type` noch `labels`                | Ticket-Typ und Labels aus dem Ticket übergeben                        |
-| `typ_unbekannt`    | kein Kandidat, oder `type` ohne Datei                        | nennt Typen, Ticket-Typen und Labels aus `types.yaml`                 |
-| `typ_mehrdeutig`   | mehrere Kandidaten ohne `type`                               | nennt je Kandidat, was ihn ausgelöst hat; Labels korrigieren oder `type` wählen |
-| `typ_widerspruch`  | `type` ist nicht unter den Kandidaten                        | nennt die Kandidaten                                                  |
-| `dod_ungueltig`    | Basis, Typ-Datei oder (bei Auflösung über Ticket) `types.yaml` ungültig | Fehler mit Datei:Zeile:Spalte; Datei korrigieren, der Server liest bei jedem Aufruf neu |
-| `dod_nicht_lesbar` | Ordner fehlt oder `base.yaml` fehlt                          | nennt `DOD_DIR`                                                       |
-| `text_leer`        | `lint_acceptance_criteria` mit leerem Text                   | –                                                                     |
+- For a type, it compares two versions as described in 6.3, each merged with its base. For `base`, it compares two base versions.
+- Output: `{ type, from: "software-dev@3+base@1", to: "software-dev@4+base@2", criteria: { added, removed, changed: [{ id, origin, fields: [{ key, from, to }] }] }, rules: { added, removed, changed }, template_changed, first_seen: { from, to } }`. Every entry names its `origin`, so a review sees whether a change came from the base or the type.
+- Removing a type's own criterion between two versions is allowed (the team decided it by pull request); the diff shows it. Only removing a base criterion inside a type file is an error (5.6).
+- Domain errors: `unknown_type`, `unknown_version` (the hint lists the recorded versions), `no_history` (only one version recorded), `history_unavailable`.
 
-`text` über 50.000 Zeichen und zu viele Belege lehnt schon das Eingabeschema ab; das SDK meldet das ebenfalls als `isError`.
+## 9. Resources
 
-## 10. Transport und Sicherheit
+| URI                              | Type               | Content                                                                                                                       |
+| -------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `dod://types`                    | `application/json` | base (file, version, number of criteria); per type: title, versions, effective label, URI, mapping, valid or not; errors; recorded versions; `history` status |
+| `dod://type/{type}`              | `application/json` | **one resource per type file**: base and type merged, each criterion with `origin` (`base` or the type), file and line; rules with origin; links to template, rubric and versions |
+| `dod://type/{type}/version/{n}`  | `application/json` | the same shape for an earlier version (6.3), read from the store                                                               |
+| `template://{type}`              | `text/markdown`    | the template for acceptance criteria and the rules that `lint_acceptance_criteria` applies for this type                       |
+| `rubric://dod/{type}`            | `text/markdown`    | judgment criteria of base and type: question, standards for `plausible` and `doubtful`, instructions (a quote is required); attestations as "not for the model to decide: role X" |
 
-**stdio**, ein Nutzer, ein Rechner, kein Schlüssel. stdout trägt nur JSON-RPC, alles andere geht nach stderr. Eine geteilte Organisations-DoD über Streamable HTTP mit OAuth 2.1 ist ein späterer Schritt (Skizze, Abschnitt 4).
+- `dod://type/{type}`, `template://{type}` and `rubric://dod/{type}` are resource templates with a `list` callback: `resources/list` enumerates every type file in the folder, with no code change for new types. `complete` fills in `{type}`. The version template is not listed (it would grow with every version); `dod://type/{type}` links its versions.
+- An invalid type file is listed too (its title says "invalid"). Reading it returns `{ type, valid: false, errors: [...] }` or a Markdown list of errors, so the reader sees which line to change (D5).
+- A type without a file, or a version that is not recorded, gives `ResourceNotFoundError` (JSON-RPC −32602), as in `course-standards-mcp`.
+- Rubric and template are generated from the same file the server checks against; what the model reads and what the server computes cannot drift apart.
 
-| #  | Bedrohung                                                       | Begrenzung                                                                                               |
-| -- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| T1 | Agent erfindet oder überträgt Belege falsch                     | strukturierte Belege mit Tool, Argumenten, Zeitpunkt, Rohwert; Abgleich mit `fetch_with`, Alter, Stand; der Mensch sieht jeden Tool-Aufruf im Verlauf; für teure Kriterien später dieselbe Prüfung in CI (offen) |
-| T2 | Ein Agentenbericht wird als „done“ gelesen                      | kein Gesamtstatus, kein schreibendes Tool, `who_decides` je Kriterium, Schlusssatz im Text               |
-| T3 | Prompt Injection in Rohwerten oder Akzeptanzkriterien           | der Server behandelt sie als Daten, führt nichts aus, kürzt Rohwerte; das Modell im Client bleibt das Risiko |
-| T4 | Ein Typ schwächt die Basis still ab                              | striktes Schema, ID-Kollision, Pflicht `extends: base` (5.6)                                             |
-| T5 | YAML-Missbrauch (Alias-Bombe, riesige Datei)                    | `yaml` mit Core-Schema, ohne eigene Tags, `maxAliasCount: 100`, Dateien ≤ 100 KB, ≤ 50 Typ-Dateien, ≤ 200 Kriterien je Datei |
-| T6 | ReDoS über Muster aus Teamdateien                               | keine regulären Ausdrücke aus YAML; Wortlisten werden escaped                                            |
-| T7 | Kundendaten im Modellkontext (Kundenanfragen)                   | der Server braucht für Belege nur Zeitstempel und Zahlen; was das Modell für Urteile liest, regelt der Client (Skizze, Frage 7) |
-| T8 | Pfade                                                           | nur der konfigurierte Ordner, nur `*.yaml` darin, keine Unterordner, keine Pfadeingabe in Tools          |
+## 10. Domain errors and protocol errors
 
-## 11. Grenzen
+As in the two model servers: a **domain error** means the tool understood the request but cannot do the job with this input. It comes back as a tool result with `isError: true`, a stable `code`, a message and a `hint`, so the agent can correct itself. A **protocol error** (unknown tool, malformed request, unknown resource) comes back as a JSON-RPC error. The server catches unexpected exceptions, logs the stack to stderr and returns only "internal_error, see server log".
 
-| Grenze                                                     | Wie der Server es zeigt                                                        |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Belege kommen vom Agenten (Variante B)                     | `limits` im Ergebnis; `quelle_unerwartet` → `braucht Urteil`                   |
-| Wer eine Bestätigung gegeben hat, prüft der Server nicht   | `by` muss nur gesetzt sein; `limits`                                           |
-| Zahlen-Regel nutzt Großschreibung deutscher Substantive    | in der Vorlage und in `limits` des Lint-Ergebnisses genannt                    |
-| Wortlisten finden keine Umschreibungen                     | Lint ist eine Hilfe, kein Urteil; die Rubrik fragt nach dem Inhalt             |
-| Szenarien ohne Schlüsselwörter (Fließtext)                 | `kein_szenario` statt Raten                                                    |
-| Frühere Fassungen und Vergleich                            | offen (`diff_dod`, `…/version/{n}`)                                           |
+| Code                  | When                                                                       | Hint                                                                        |
+| --------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `type_missing`        | none of `type`, `ticket_type`, `labels`                                    | pass ticket type and labels from the ticket                                 |
+| `unknown_type`        | no candidate, or `type` without a file                                     | lists types, ticket types and labels from `types.yaml`                      |
+| `ambiguous_type`      | several candidates and no `type`                                           | names what triggered each candidate; fix the labels or choose `type`        |
+| `type_conflict`       | `type` is not among the candidates                                         | lists the candidates                                                        |
+| `invalid_dod`         | base, type file or (for ticket resolution) `types.yaml` invalid            | errors with file:line:column; fix the file, the server rereads it on every request |
+| `dod_unavailable`     | folder or `base.yaml` missing                                              | names `DOD_DIR`                                                             |
+| `empty_text`          | `lint_acceptance_criteria` with empty text                                 | –                                                                           |
+| `unknown_version`     | `diff_dod` with a version the store does not hold                          | lists the recorded versions                                                 |
+| `no_history`          | `diff_dod` with only one recorded version                                  | the history starts with the first sync (6.3)                                |
+| `history_unavailable` | the store cannot be read                                                   | names the backend; the current DoD still works                              |
 
-## 12. Fiktive Beispieldaten
+Text over 50,000 characters and too much evidence are rejected by the input schema; the SDK reports that as `isError` too.
 
-Ein erfundenes Team mit drei Aufgabentypen, angelehnt an die Tabelle der Skizze (3.1):
+## 11. Transport, container and security
 
-| Datei                | Version | Beleg (`evidence`)                                                 | Urteil (`judgment`)                          | Bestätigung (`attestation`) | Regeln für Akzeptanzkriterien             |
-| -------------------- | ------- | ------------------------------------------------------------------ | -------------------------------------------- | --------------------------- | ----------------------------------------- |
-| `base.yaml`          | 2       | `ERGEBNIS-VERLINKT`                                                | `FOLGEARBEIT`                                | `ZWEITE-PERSON` (Teammitglied) | `AK-VAGE`                              |
-| `software-dev.yaml`  | 4       | `QUALITY-GATE`, `BUILD`, `TESTS` (alle `same_ref`, 24 h), `TESTAENDERUNG-AUSGEWIESEN` | `AK-GETESTET`              | `RUNBOOK` (Betrieb)         | `AK-GWT`, `AK-DANN`, `AK-EINHEIT`, `AK-VAGE-SW` |
-| `dokument.yaml`      | 2       | `PFLICHTABSCHNITTE`, `LINKS` (72 h), `BEGRIFFE`                    | `ZWECK-ZIELGRUPPE`, `SYSTEMSTAND`            | `FACHFREIGABE` (Fachverantwortung) | `AK-FELDER` (Zweck, Zielgruppe, Umfang), `AK-VAGE-DOK` |
-| `kundenanfrage.yaml` | 3       | `FRIST`                                                            | `VOLLSTAENDIG`, `WISSENSBASIS`               | `ZUSAGE` (Vertrieb)         | `AK-FELDER` (Fragen als Liste, Frist), `AK-VAGE-KA` |
+### 11.1 HTTPS
 
-Dazu `examples/` mit fiktiven Belegen (JSON) je Typ, einmal mit Lücken und einmal vollständig, und Akzeptanzkriterien je Typ mit absichtlichen Befunden. Tests und Demo nutzen dieselben Dateien. Testfälle für ungültige DoDs liegen unter `test/fixtures/`.
+- **One endpoint:** `POST /mcp` through the SDK's `createMcpHandler` (stateless per request, 2026-07-28, with the SDK's stateless fallback for 2025-era clients). `GET /healthz` answers `200 ok` without authentication and without data, for the Docker health check. Everything else is `404`.
+- **TLS in the container.** Node's `https` server with certificate and key from mounted files (Docker secrets). TLS 1.2 or higher. There is **no plain-HTTP mode**: without certificate, key or token file, the server refuses to start in `https` mode (D11).
+- **Order of checks per request:** TLS → `Host` against `DOD_ALLOWED_HOSTS` (SDK `hostHeaderValidationResponse`, against DNS rebinding) → `Origin`: a request that carries an `Origin` header must match `DOD_ALLOWED_ORIGINS`, which is empty by default (MCP clients send none, browsers do; SDK `originValidationResponse`) → bearer token → body size (1 MB) → MCP.
+- **Bearer token.** SDK `requireBearerAuth` with a small verifier for static tokens: tokens come from a file (`DOD_TOKEN_FILE`, one token per line, so a new token can be added before the old one is removed), each at least 32 characters. The comparison hashes both sides with SHA-256 and uses `timingSafeEqual`. A missing or wrong token gives `401` with `WWW-Authenticate: Bearer`. Tokens never come from an environment variable, so they do not show up in `docker inspect`. OAuth 2.1 as in the MCP authorization specification is the later step (answer 2, section 18).
+- **Logging** to stderr as JSON lines: time, method, tool or resource, status, duration. Never the token, never raw evidence values or acceptance texts.
 
-## 13. Entscheidungen
+### 11.2 Container
 
-**D1 Belege sammelt der Agent (Variante B).** Entscheidung: Der Agent holt Belege über die offiziellen Server und übergibt sie strukturiert; der Server prüft Form, Alter, Stand und Wert. Alternative: Server holt sie selbst über APIs (A). Grund: kein Schlüssel, Rechte der angemeldeten Person, keine eigenen API-Clients, mit festen Testdaten prüfbar (Skizze 3.3). A bleibt der CI vorbehalten.
+- **Dockerfile**, multi-stage: build stage (`npm ci`, `tsc`), runtime stage `node:26-slim`, pinned by digest once built, with `npm ci --omit=dev`, `dist/` and the fictional `dod/` as default content.
+- Runs as the non-root user `node`, works with `--read-only` (only `/data` is writable), `EXPOSE 8443`, `HEALTHCHECK` through a small Node script against `https://localhost:8443/healthz`.
+- **Mounts:** `/dod` (the team's DoD folder, read-only), `/data` (volume for SQLite), `/run/secrets/tls_cert`, `/run/secrets/tls_key`, `/run/secrets/dod_tokens`.
+- **`compose.yaml`** for a local run: secrets from `local/secrets/` (git-ignored), the example `dod/` mounted read-only, a named volume for `/data`, port `8443`.
+- **`scripts/dev-cert.sh`** creates a self-signed certificate for `localhost` and a random token in `local/secrets/` with `openssl`. Claude Code then connects with `claude mcp add --transport http dod https://localhost:8443/mcp --header "Authorization: Bearer …"` and `NODE_EXTRA_CA_CERTS` pointing to the certificate.
+- **One team per container** (answer 3, section 18): one DoD folder, one database, one set of tokens. Several teams run several containers.
 
-**D2 Urteil im Client-Modell.** Entscheidung: Für Urteilskriterien liefert der Server Frage und Maßstab, das Modell schätzt ein. Alternative: Modellaufruf im Server oder Sampling. Grund: reproduzierbar, testbar, kein Schlüssel; Sampling ist abgekündigt. Die Rubrik entsteht aus derselben Datei.
+### 11.3 Configuration (environment only)
 
-**D3 Kein Gesamtstatus.** Entscheidung: nur Status je Kriterium und Zählung. Alternative: `done: true/false` oder Ampel. Grund: „done“ entscheidet das Team; ein Gesamtwert würde als Entscheidung gelesen.
+| Variable              | Default (stdio / container)                          | Purpose                                                    |
+| --------------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| `DOD_TRANSPORT`       | `stdio` / `https`                                    | transport                                                  |
+| `DOD_DIR`             | `<repo>/dod` / `/dod`                                | DoD folder                                                 |
+| `DOD_DATABASE`        | `sqlite:local/dod.sqlite` / `sqlite:/data/dod.sqlite` | store (6.4)                                               |
+| `DOD_PORT`            | – / `8443`                                           | HTTPS port                                                 |
+| `DOD_TLS_CERT_FILE`   | – / `/run/secrets/tls_cert`                          | certificate (PEM)                                          |
+| `DOD_TLS_KEY_FILE`    | – / `/run/secrets/tls_key`                           | private key (PEM)                                          |
+| `DOD_TOKEN_FILE`      | – / `/run/secrets/dod_tokens`                        | bearer tokens, one per line                                |
+| `DOD_ALLOWED_HOSTS`   | – / `localhost,127.0.0.1`                            | accepted `Host` values (without port)                      |
+| `DOD_ALLOWED_ORIGINS` | – / empty                                            | accepted `Origin` values; empty rejects every `Origin`     |
 
-**D4 Eine Datei je Typ, Typname = Dateiname.** Entscheidung: Erkennung über den Ordnerinhalt, eine Ressource je Datei über `list`-Callback. Alternative: alle Typen in einer Datei oder eine Typ-Liste im Code. Grund: neuer Typ ohne Codeänderung; jede Änderung ist ein überschaubarer Diff einer Datei.
+### 11.4 Threats and limits
 
-**D5 Ungültige Typen bleiben sichtbar.** Entscheidung: Eine ungültige Typ-Datei wird gelistet und zeigt beim Lesen ihre Fehler; nur ihre Tools melden `dod_ungueltig`, andere Typen arbeiten weiter. Alternative: Server startet nicht, oder die Datei verschwindet still. Grund: Wer die Ressource liest, sieht sofort Datei und Zeile; ein Tippfehler in einem Typ legt nicht das ganze Team lahm.
+| #   | Threat                                                         | Limitation                                                                                                     |
+| --- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| T1  | The agent invents or miscopies evidence                        | structured evidence with tool, arguments, time and raw value; check against `fetch_with`, age and revision; the person sees every tool call in the transcript; for expensive criteria the same check in CI later (open) |
+| T2  | An agent report is read as "done"                              | no overall status, no writing tool, `who_decides` per criterion, closing sentence in the text                  |
+| T3  | Prompt injection in raw values or acceptance criteria          | the server treats them as data, executes nothing, cuts raw values; the model in the client remains the risk     |
+| T4  | A type quietly weakens the base                                | strict schema, id collision, required `extends: base` (5.6)                                                    |
+| T5  | A file changes without a new version                           | normalised hash per version in the store → `version_not_bumped` (6.2)                                          |
+| T6  | YAML abuse (alias bomb, huge file)                             | `yaml` with the core schema, no custom tags, `maxAliasCount: 100`, files ≤ 100 KB, ≤ 50 type files, ≤ 200 criteria per file |
+| T7  | ReDoS through patterns from team files                         | no regular expressions from YAML; word lists are escaped                                                       |
+| T8  | Unauthenticated or cross-site access to the HTTPS endpoint     | TLS only, bearer token, Host and Origin checks, no plain-HTTP mode, `/healthz` without data                    |
+| T9  | Token leaks                                                    | tokens only from a mounted file, hashed comparison, never logged, never in results                             |
+| T10 | Container breakout or tampering                                | non-root user, read-only root file system, read-only `/dod`, writable only `/data`                             |
+| T11 | Customer data in the model context (Kundenanfrage)             | evidence needs only timestamps and numbers; the store holds no evidence; what the model reads for judgments is the client's matter (sketch, question 7) |
+| T12 | Request floods                                                 | body limit 1 MB, input limits per tool; no rate limit in version 1 (open, or at the reverse proxy)             |
 
-**D6 Parser `yaml` statt `js-yaml`.** Entscheidung: `yaml` mit `LineCounter`; zod-Fehlerpfade werden auf Knoten und Zeilen abgebildet. Alternative: `js-yaml` wie in `course-standards-mcp`. Grund: Fehler mit Datei und Zeile sind Pflicht, `js-yaml` liefert Positionen nur für Syntaxfehler.
+## 12. Limits of the heuristics
 
-**D7 Feste Operatoren und Regelarten.** Entscheidung: fünf `expect`-Operatoren und fünf Regelarten im Code, in YAML nur parametriert. Alternative: Regex oder Ausdrücke in YAML. Grund: erklärbar, testbar, kein ReDoS; neue Typen brauchen keinen Code, neue Prüfarten bewusst schon.
+| Limit                                                         | How the server shows it                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Evidence comes from the agent (variant B)                     | `limits` in the result; `unexpected_source` → `needs_judgment`                 |
+| The server does not verify who gave a confirmation            | `by` only has to be set; `limits`                                              |
+| The number rule relies on German nouns being capitalised      | named in the template and in the lint result's `limits`                        |
+| Word lists miss paraphrases                                   | the lint is an aid, not a verdict; the rubric asks about substance             |
+| Scenarios without keywords (prose)                            | `no_scenario` instead of guessing                                              |
+| The history starts at the first sync                          | `first_seen_at` in every version; Git import open (section 16)                 |
 
-**D8 Typ-Auflösung ohne Standard.** Entscheidung: genau ein Kandidat aus Ticket-Typ und Labels; ein ausdrückliches `type` nur als Wahl unter den Kandidaten oder ohne Ticketangaben. Alternative: Vorrang Ticket-Typ vor Label, oder ein Standardtyp. Grund: Ein falsch zugeordnetes Item würde gegen die falsche DoD geprüft und sähe trotzdem „grün“ aus.
+## 13. Fictional example data
 
-**D9 Fehlender Beleg ist `nicht erfüllt`.** Entscheidung: `beleg_fehlt` ergibt `nicht erfüllt`. Alternative: `braucht Urteil`. Grund: „braucht Urteil“ heißt, mit dem vorhandenen Material kann jemand entscheiden; ohne Material ist das Kriterium nicht nachgewiesen (Frage F1).
+One invented team with three task types, following the table in the sketch (3.1):
 
-**D10 `as_of` als Eingabe.** Entscheidung: Bezugszeitpunkt optional als Eingabe, im Ergebnis immer genannt. Alternative: immer die Serveruhr. Grund: gleiche Eingabe, gleiche Ausgabe; Tests ohne Uhr-Mocks.
+| File                 | Version | Evidence (`evidence`)                                                    | Judgment (`judgment`)              | Attestation                        | Acceptance rules                               |
+| -------------------- | ------- | ------------------------------------------------------------------------ | ---------------------------------- | ---------------------------------- | ---------------------------------------------- |
+| `base.yaml`          | 2       | `ERGEBNIS-VERLINKT`                                                      | `FOLGEARBEIT`                      | `ZWEITE-PERSON` (Teammitglied)     | `AK-VAGE`                                      |
+| `software-dev.yaml`  | 4       | `QUALITY-GATE`, `BUILD`, `TESTS` (all `same_ref`, 24 h), `TESTAENDERUNG-AUSGEWIESEN` | `AK-GETESTET`          | `RUNBOOK` (Betrieb)                | `AK-GWT`, `AK-DANN`, `AK-EINHEIT`, `AK-VAGE-SW` |
+| `dokument.yaml`      | 2       | `PFLICHTABSCHNITTE`, `LINKS` (72 h), `BEGRIFFE`                          | `ZWECK-ZIELGRUPPE`, `SYSTEMSTAND`  | `FACHFREIGABE` (Fachverantwortung) | `AK-FELDER` (Zweck, Zielgruppe, Umfang), `AK-VAGE-DOK` |
+| `kundenanfrage.yaml` | 3       | `FRIST`                                                                  | `VOLLSTAENDIG`, `WISSENSBASIS`     | `ZUSAGE` (Vertrieb)                | `AK-FELDER` (Fragen as a list, Frist), `AK-VAGE-KA` |
 
-**D11 Unerwartete Quelle ist `braucht Urteil`.** Entscheidung: Ein Beleg aus einem Tool, das nicht in `fetch_with` steht, wird nicht verworfen, sondern dem Menschen vorgelegt. Alternative: `nicht erfüllt`. Grund: Teams nutzen verschiedene Systeme; der Server kann nicht wissen, ob der Wert gleichwertig ist, ein Mensch schon.
+Plus `examples/` with fictional evidence (JSON) per type, once with gaps and once complete, and acceptance criteria per type with deliberate findings. Tests and the demo use the same files. Invalid DoDs for the tests, and an older version of `software-dev.yaml` for the history tests, live in `test/fixtures/`.
 
-**D12 Drei Tools.** Entscheidung: `get_dod`, `check_dod`, `lint_acceptance_criteria`; `get_dod` ohne Angaben ersetzt ein `list_types`. Alternative: je Typ ein Tool oder ein eigenes Listen-Tool. Grund: wenige Tools, weniger Fehlgriffe des Modells; die Typen sind Daten, keine Tools.
+## 14. Design decisions
 
-**D13 Kein Cache.** Entscheidung: Ordner bei jedem Aufruf lesen. Alternative: einmal beim Start laden. Grund: wenige kleine Dateien; eine neue Typ-Datei erscheint ohne Neustart.
+**D1 The agent collects evidence (variant B).** Decision: the agent fetches evidence through the official servers and passes it in a structured form; the server checks form, age, revision and value. Alternative: the server fetches it through APIs (A). Reason: no credentials for other systems, the person's own permissions, no API clients to maintain, testable with fixed data (sketch 3.3). A remains for CI.
 
-**D14 Lint nur über Text.** Entscheidung: `lint_acceptance_criteria` nimmt nur `text`. Alternative: `path` wie in `course-standards-mcp`. Grund: Akzeptanzkriterien stehen im Ticket; keine Pfadeingabe heißt keine Pfadprüfung.
+**D2 Judgment in the client model.** Decision: for judgment criteria the server provides question and standard; the model assesses. Alternative: a model call in the server, or sampling. Reason: reproducible, testable, no key; sampling is deprecated. The rubric comes from the same file.
 
-**D15 Sprache.** Entscheidung: Status, Befunde, Fehlercodes, Ressourcen und Meldungen deutsch; YAML-Schlüssel, Code, Kommentare und Commit-Messages englisch. Alternative: alles englisch wie die beiden Vorbilder. Grund: Die Skizze und das Teamgespräch sind deutsch, die Statuswörter stehen in der Skizze; Schlüssel bleiben wie im Skizzenbeispiel englisch.
+**D3 No overall status.** Decision: status per criterion and counts only. Alternative: `done: true/false` or a traffic light. Reason: the team decides "done"; an overall value would be read as that decision.
 
-**D16 SDK und Werkzeuge wie die Vorbilder.** `@modelcontextprotocol/server` 2.4.0, TypeScript strict (`NodeNext`), zod v4, `node --test`, ESLint, Prettier; `@modelcontextprotocol/client` 2.4.0 für den Protokolltest.
+**D4 One file per type, type name = file name.** Decision: discovery from the folder content, one resource per file through a `list` callback. Alternative: all types in one file, or a list of types in code. Reason: a new type needs no code change; every change is a small diff of one file.
 
-**D17 Ausgabe-Budget.** Rohwerte ≤ 200 Zeichen, Auszüge ≤ 120 Zeichen, ≤ 100 Lint-Befunde. Ziel unter 8.000 Tokens für eine DoD mit 20 Kriterien.
+**D5 Invalid types stay visible.** Decision: an invalid type file is listed and shows its errors when read; only its tools report `invalid_dod`, other types keep working. Alternative: the server does not start, or the file silently disappears. Reason: whoever reads the resource sees file and line at once; a typo in one type does not stop the whole team.
 
-## 14. Projektlayout und Testplan
+**D6 Parser `yaml` instead of `js-yaml`.** Decision: `yaml` with `LineCounter`; zod issue paths are mapped to nodes and lines. Alternative: `js-yaml` as in `course-standards-mcp`. Reason: errors with file and line are required, and `js-yaml` gives positions only for syntax errors.
+
+**D7 Fixed operators and rule kinds.** Decision: five `expect` operators and five rule kinds in code, only parameterised in YAML. Alternative: regular expressions or expressions in YAML. Reason: explainable, testable, no ReDoS; new types need no code, new kinds of check deliberately do.
+
+**D8 Type resolution without a default.** Decision: exactly one candidate from ticket type and labels; an explicit `type` only as a choice among the candidates, or without ticket data. Alternative: ticket type before label, or a default type. Reason: a wrongly assigned item would be checked against the wrong DoD and still look green.
+
+**D9 Missing evidence is `not_met`.** Decision: `evidence_missing` gives `not_met`. Alternative: `needs_judgment`. Reason: `needs_judgment` means someone can decide with the material at hand; without material the criterion is not shown (question F1).
+
+**D10 Files lead, the database remembers.** Decision: YAML in the team repository is the source of truth; the server records every valid version it sees in its own store, before each request, idempotently. Alternative: the database as the source with YAML import and export, or no database and history from Git. Reason: changes stay pull requests with review; the container needs no Git access and no repository credentials; history and `diff_dod` work anyway (answer 1). The sync writes only to the server's own store, so the tools are still read-only towards everything else.
+
+**D11 HTTPS only, with a bearer token.** Decision: TLS in the container, static tokens from a mounted file, no plain-HTTP mode. Alternative: OAuth 2.1 now, or no authentication. Reason: enough for one team per container and simple to explain and test; OAuth 2.1 needs an identity provider and follows when a DoD is shared across teams (answer 2).
+
+**D12 Configurable store behind a narrow interface.** Decision: `DodStore` with six methods, `sqlite:` via `node:sqlite` first. Alternative: an ORM or a query builder for several databases at once. Reason: the store holds two tables; an ORM would be more code than the store. `node:sqlite` needs no native build in the image. A server-based backend is a second implementation of the same interface.
+
+**D13 stdio stays.** Decision: the same server runs over stdio or HTTPS, chosen by `DOD_TRANSPORT`. Alternative: HTTPS only. Reason: local work in Claude Code needs no certificate, and the fast tests run without Docker.
+
+**D14 Lint on text only.** Decision: `lint_acceptance_criteria` takes only `text`. Alternative: `path` as in `course-standards-mcp`. Reason: acceptance criteria live in the ticket; and a server in a container should not read paths at all.
+
+**D15 Unexpected source is `needs_judgment`.** Decision: evidence from a tool that is not in `fetch_with` is not discarded but put in front of a person. Alternative: `not_met`. Reason: teams use different systems; the server cannot know whether the value is equivalent, a person can.
+
+**D16 Four tools.** Decision: `get_dod`, `check_dod`, `lint_acceptance_criteria`, `diff_dod`; `get_dod` without input replaces a `list_types`. Alternative: one tool per type, or a separate list tool. Reason: few tools, fewer wrong choices by the model; types are data, not tools.
+
+**D17 English codes.** Decision: specification, status values, finding and error codes, messages and resources in English; criterion texts, questions and templates in the team's language. Alternative: the German words of the concept sketch. Reason: consistent with the other two servers and the code; the mapping to the sketch's words is in section 4 (answer 4).
+
+**D18 SDK and tooling as in the model servers.** `@modelcontextprotocol/server` 2.4.0 (plus `@modelcontextprotocol/node` 2.1.2 for `toNodeHandler`), TypeScript strict (`NodeNext`), zod v4, `node --test`, ESLint, Prettier; `@modelcontextprotocol/client` 2.4.0 for the protocol tests.
+
+**D19 Output budget.** Raw values ≤ 200 characters, excerpts ≤ 120, ≤ 100 lint findings. Target: under 8,000 tokens for a DoD with 20 criteria.
+
+## 15. Project layout, tooling and test plan
 
 ```
 dod-mcp/
-  dod/                         fiktive DoD (Abschnitt 12)
-  examples/                    fiktive Belege (JSON) und Akzeptanzkriterien (Markdown)
-  src/server.ts                McpServer, stdio, Registrierung
-  src/config.ts                DOD_DIR, Grenzen
-  src/logger.ts                nur stderr
-  src/errors.ts                DomainError, success, guarded
-  src/dod/yamlFile.ts          Parsen mit Positionen, zod-Pfad → Zeile
-  src/dod/schema.ts            zod-Schemas für Basis, Typ, types.yaml
-  src/dod/load.ts              Ordner lesen, validieren, Fehlerliste
-  src/dod/merge.ts             Basis + Typ mit Herkunft, Fassungskennung
-  src/dod/resolve.ts           Typ-Auflösung (Abschnitt 6)
-  src/check/expect.ts          Operatoren
-  src/check/checkDod.ts        Status und Befunde (8.2)
-  src/lint/                    Regelarten und Lint-Lauf (8.3)
-  src/render/                  Rubrik und Vorlage als Markdown
+  dod/                         fictional DoD (section 13)
+  examples/                    fictional evidence (JSON) and acceptance criteria (Markdown)
+  src/server.ts                createServer(): tools, resources
+  src/main.ts                  entry point: DOD_TRANSPORT → stdio or https
+  src/http.ts                  HTTPS server, Host/Origin/token checks, /healthz
+  src/healthcheck.ts           used by the Docker HEALTHCHECK
+  src/config.ts  src/logger.ts  src/errors.ts
+  src/dod/                     yamlFile.ts, schema.ts, load.ts, merge.ts, resolve.ts, sync.ts
+  src/store/                   store.ts (DodStore), sqlite.ts, migrations.ts
+  src/check/                   expect.ts, checkDod.ts
+  src/lint/                    rule kinds and lint run
+  src/diff/                    diffDod.ts
+  src/render/                  rubric and template as Markdown
   src/resources.ts  src/tools/
-  test/                        node:test; test/fixtures/ mit ungültigen DoDs
+  test/                        node:test; test/fixtures/ with invalid DoDs and older versions
+  test/docker/                 container test (npm run test:docker)
+  Dockerfile  .dockerignore  compose.yaml  scripts/dev-cert.sh
   docs/design.md
 ```
 
-**Tests:**
+**Tests (`npm test`, no Docker, no network):**
 
-1. **Laden:** die Beispieldaten sind gültig; je ungültigem Fixture der erwartete Code mit Datei und Zeile (Basiskriterium überschrieben, `remove`, `extends` fehlt, unbekanntes Feld, `judgment` ohne `question`, doppelte ID, YAML-Syntax, Typ ≠ Dateiname, Label doppelt in `types.yaml`).
-2. **Neuer Typ ohne Code:** Beispielordner in ein Temp-Verzeichnis kopieren, `einkauf.yaml` hinzufügen; `dod://types`, `resources/list`, `get_dod`, Vorlage und Rubrik kennen den Typ.
-3. **Auflösung:** eindeutig, unbekannt, mehrdeutig, ausdrücklich unter Kandidaten, Widerspruch, nichts angegeben.
-4. **`check_dod`:** jeder Befund aus 8.2 einzeln; Zählung; `unused_evidence`; gleiche Ausgabe bei gleichem `as_of`; Beispielbelege mit Lücken und vollständig.
-5. **Lint:** je Typ ein Text mit Befunden an bekannten Zeilen und ein sauberer Text ohne Befund; Zahlen mit Daten, Uhrzeiten, Bereichen.
-6. **Protokoll:** Server als Kindprozess über stdio mit dem offiziellen Client; drei Tools, alle `readOnlyHint`; `resources/list` enthält `dod://types` und je Typ-Datei `dod://type/…`, `template://…`, `rubric://dod/…`; unbekanntes Tool → JSON-RPC-Fehler; mehrdeutiger Typ → `isError` mit `hint`.
-7. **Budget:** `check_dod` auf `software-dev` unter 8.000 Tokens (Zeichen / 4).
-8. **Vor jedem Commit:** Portfolio-Denylist ohne Treffer (nur Dateinamen ausgeben).
+1. **Loading:** the example data is valid; for each invalid fixture, the expected code with file and line (base criterion overridden, `remove`, `extends` missing, unknown key, `judgment` without `question`, duplicate id, YAML syntax, type ≠ file name, label assigned twice in `types.yaml`).
+2. **New type without code:** copy the example folder to a temporary directory, add `einkauf.yaml`; `dod://types`, `resources/list`, `get_dod`, template and rubric know the type.
+3. **Resolution:** unique, unknown, ambiguous, explicit among candidates, conflict, nothing given.
+4. **`check_dod`:** every finding from 8.2 on its own; counts; `unused_evidence`; same output for the same `as_of`; example evidence with gaps and complete.
+5. **Lint:** per type one text with findings at known lines and one clean text; numbers with dates, times and ranges.
+6. **Store and history:** sync on `sqlite::memory:` and on a temporary file; recording is idempotent; `version_not_bumped` and `version_regressed`; a comment-only change is not a version; `dod://type/{type}/version/{n}`; `diff_dod` (added, removed, changed, base change); `no_history`, `unknown_version`; a failing store keeps the current DoD working.
+7. **Protocol over stdio:** the server as a child process with the official client; four tools, all `readOnlyHint`; `resources/list` contains `dod://types` and, per type file, `dod://type/…`, `template://…`, `rubric://dod/…`; unknown tool → JSON-RPC error; ambiguous type → `isError` with `hint`.
+8. **HTTPS in process:** a self-signed certificate created at test time with `openssl` (the test is skipped with a message if `openssl` is missing); no token → `401`; wrong token → `401`; foreign `Host` → rejected; an `Origin` header → rejected; `/healthz` → `200` without data; with the token, the official client over Streamable HTTP lists tools and resources and calls `check_dod`; the server refuses to start without certificate or token file.
+9. **Budget:** `check_dod` on `software-dev` under 8,000 tokens (characters / 4).
 
-## 15. Offene Punkte
+**Container test (`npm run test:docker`, needs Docker):**
 
-- **`diff_dod` und `dod://type/{type}/version/{n}`:** brauchen die Git-Historie des Team-Repositorys (lesend, z. B. `git show <rev>:dod/<type>.yaml`). Erst wenn klar ist, ob der Server Git aufrufen darf oder der Client zwei Fassungen übergibt.
-- **`procedure://done-check`, `…/refinement`, `…/dod-review`** und die Prompt-Vorlagen **`refine_item`** und **`dod_review`** aus der Skizze.
-- **Prüfung in CI (Variante A):** dieselbe `check_dod`-Logik als CLI mit Lese-Token für Quality Gate und Build.
-- **Organisations-DoD als Minimum** (Skizze, Frage 1): eine weitere Ebene über `base.yaml` mit derselben Regel „nur ergänzen“.
-- **Streamable HTTP mit OAuth 2.1** für eine geteilte DoD.
+1. Build the image; create certificate and token in a temporary folder.
+2. Start the container with `--read-only`, the example `dod/` mounted read-only, a temporary volume for `/data` and the secrets; wait until the health check reports `healthy`.
+3. Check that the process runs as a non-root user and that `/healthz` answers without a token.
+4. Over HTTPS with the official client: `401` without a token; with the token, `resources/list` shows one `dod://type/…` per type file, `get_dod` and `check_dod` work on the example evidence.
+5. Change the mounted `software-dev.yaml` (higher version), call again, restart the container with the same volume: both versions are still in the history, and `diff_dod` shows the change.
+6. Remove container, volume and temporary files, also when a step fails.
 
-## 16. Fragen zur Freigabe
+**Before every commit:** the portfolio denylist with zero hits, printing file names only.
 
-| #  | Frage                                                                                                         | Vorschlag                                                                                      |
-| -- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| F1 | Fehlender Beleg oder fehlende Bestätigung: `nicht erfüllt` (D9)?                                               | ja                                                                                             |
-| F2 | Darf ein ausdrückliches `type` eine Mehrdeutigkeit auflösen, wenn es unter den Kandidaten ist (D8)?            | ja, sichtbar als `resolution.via: explicit`                                                    |
-| F3 | Zwei kleine Zusätze jetzt mitbauen? (a) CLI `dod-validate` für Pull Requests auf `dod/`, nutzt denselben Loader und zeigt Fehler mit Datei und Zeile im CI-Log; (b) Prompt-Vorlage `done_check(item)` | (a) ja, etwa 40 Zeilen; (b) ja, ohne neue Logik, macht die Demo im Gespräch durchgängig        |
-| F4 | Sprache wie D15: Fachvokabular deutsch, Code und Commits englisch?                                             | ja                                                                                             |
+**Phases, each with a review before the next:** 1 scaffold, example data, loader and validation; 2 resolution, resources, `get_dod`, `check_dod`, lint; 3 store, sync, versions, `diff_dod`; 4 HTTPS, Dockerfile, compose, container test; 5 README and a short verification report.
+
+## 16. Open points
+
+- **Import of the Git history** into the store (versions before the first sync), as a CLI that reads `git log` of the DoD folder.
+- **`procedure://done-check`, `…/refinement`, `…/dod-review`** and the prompts **`refine_item`** and **`dod_review`** from the sketch.
+- **Check in CI (variant A):** the same `check_dod` logic as a CLI with a read token for quality gate and build.
+- **Organisation DoD as a minimum** (sketch, question 1): another layer above `base.yaml` with the same add-only rule; several teams per server.
+- **OAuth 2.1** with the company identity provider; scopes per team.
+- **Rate limit** per token, or at a reverse proxy.
+- **Second store backend** (for example PostgreSQL) for several replicas.
+
+## 17. Questions for approval
+
+| #   | Question                                                                                                                                                                                                                                       | Proposal                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| F1  | Missing evidence or a missing attestation: `not_met` (D9)?                                                                                                                                                                                     | yes                                                                                       |
+| F2  | May an explicit `type` resolve an ambiguity when it is one of the candidates (D8)?                                                                                                                                                             | yes, visible as `resolution.via: explicit`                                                |
+| F3  | Two small additions now? (a) a CLI `dod-validate` for pull requests on `dod/`, using the same loader and printing errors with file and line in the CI log; (b) the prompt template `done_check(item)`                                           | (a) yes, about 40 lines; (b) yes, no new logic, makes the demo run end to end             |
+| F4  | A content change without a version bump makes the file invalid (`version_not_bumped`, 6.2). Strict enough, or too strict for daily work?                                                                                                      | keep it strict: the version number is what a report cites                                 |
+
+## 18. Answered questions (14 November 2026)
+
+1. **Role of the database:** it records the versions of the YAML files; the files in the team repository stay the source of truth and change by pull request. `check_dod` stores nothing.
+2. **Access over HTTPS:** TLS in the container with a mounted certificate and a bearer token from a Docker secret. OAuth 2.1 is a later step.
+3. **Tenancy:** one team per container.
+4. **Language:** the specification and all status, finding and error codes are in English.
+5. **First draft, other changes requested:** the server runs in a Docker container, defined and tested in this repository.
