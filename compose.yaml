@@ -1,0 +1,25 @@
+# Local run of the container (design section 11.2). First: scripts/dev-cert.sh
+name: dod-mcp
+services:
+  dod:
+    build: .
+    image: dod-mcp:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    ports: ['127.0.0.1:8443:8443']
+    environment:
+      DOD_ALLOWED_HOSTS: localhost,127.0.0.1
+    volumes:
+      - ./dod:/dod:ro
+      - dod-data:/data
+    secrets: [tls_cert, tls_key, dod_tokens]
+secrets:
+  tls_cert:
+    file: ./local/secrets/cert.pem
+  tls_key:
+    file: ./local/secrets/key.pem
+  dod_tokens:
+    file: ./local/secrets/tokens
+volumes:
+  dod-data:

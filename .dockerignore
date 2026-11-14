@@ -1,0 +1,12 @@
+# Only what the image needs. local/ may hold real data and secrets: never in the build context.
+.git
+node_modules
+dist
+local
+test
+docs
+examples
+coverage
+*.log
+.env
+.env.*

@@ -157,7 +157,7 @@ The tool names in the example data are placeholders (`tickets:`, `ci:`, `scm:`, 
 
 ### 5.3 What evidence must show (`expect`)
 
-A fixed, small set of operators, exactly one per criterion. `field` optionally picks a key from a raw value that is an object.
+A fixed, small set of operators, exactly one per criterion. `field` optionally picks a key from a raw value that is an object; if no key has exactly that name, a dotted path reads nested objects (`dependencies.database.status`). The same holds for the field named in `not_after`.
 
 | Operator        | Met when                                                                | Example                                                       |
 | --------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -418,7 +418,7 @@ Text only, no file path: acceptance criteria live in the ticket, and the agent p
 - **Scenarios.** A line `Szenario:` or `Scenario:` starts a scenario. Without such lines, every block separated by blank lines that contains at least one step is a scenario. Steps are recognised at the start of a line (after a list marker): `Angenommen`, `Gegeben (sei)`, `Given`; `Wenn`, `When`; `Dann`, `Then`; `Und`, `Aber`, `And`, `But` continue the previous step.
 - **Words and phrases.** Case-insensitive, at Unicode word boundaries, literal, never as a regular expression.
 - **Numbers.** Only tokens that consist entirely of a number (`2`, `0,5`, `30%`). Dates, times, versions, ids and list numbers at the start of a line do not count. A number is fine if a unit is attached, or if a unit from `units` or a capitalised word follows (a German noun: "3 Einträge"). For ranges ("2 bis 5 Sekunden", "2–5 s") the unit at the end counts.
-- **Fields.** A line `Name:` (also as a list item or in bold). A list is the list lines up to the next blank line or the next field.
+- **Fields.** A line `Name:` (also as a list item or in bold), or a Markdown heading `## Name` (any level, optionally bold or with a colon). After a line `Name:`, the field runs to the next blank line or the next field; after a heading, it runs to the next heading, blank lines included. A list is the list lines in that range (`- [ ] …` counts).
 
 Output: `{ type, dod_version, resolution, rules_applied: [{id, kind, origin}], summary: {error, warning}, findings: [...], truncated }`, at most 100 findings.
 
@@ -483,11 +483,11 @@ Text over 50,000 characters and too much evidence are rejected by the input sche
 
 ### 11.2 Container
 
-- **Dockerfile**, multi-stage: build stage (`npm ci`, `tsc`), runtime stage `node:26-slim`, pinned by digest once built, with `npm ci --omit=dev`, `dist/` and the fictional `dod/` as default content.
-- Runs as the non-root user `node`, works with `--read-only` (only `/data` is writable), `EXPOSE 8443`, `HEALTHCHECK` through a small Node script against `https://localhost:8443/healthz`.
+- **Dockerfile**, multi-stage: build stage (`npm ci`, `tsc`), runtime stage `node:26-slim` pinned by digest (Node 26.13.1), with `npm ci --omit=dev`, `dist/` and the fictional `dod/` as default content. `.dockerignore` keeps `local/` (real data, secrets) out of the build context.
+- Runs as the non-root user `node`, works with `--read-only` (only `/data` is writable), `EXPOSE 8443`, `HEALTHCHECK` through a small Node script against `https://127.0.0.1:8443/healthz` (every 30 s, every 2 s during the first 20 s). It does not verify the certificate, because it talks to its own process over the loopback interface.
 - **Mounts:** `/dod` (the team's DoD folder, read-only), `/data` (volume for SQLite), `/run/secrets/tls_cert`, `/run/secrets/tls_key`, `/run/secrets/dod_tokens`.
-- **`compose.yaml`** for a local run: secrets from `local/secrets/` (git-ignored), the example `dod/` mounted read-only, a named volume for `/data`, port `8443`.
-- **`scripts/dev-cert.sh`** creates a self-signed certificate for `localhost` and a random token in `local/secrets/` with `openssl`. Claude Code then connects with `claude mcp add --transport http dod https://localhost:8443/mcp --header "Authorization: Bearer …"` and `NODE_EXTRA_CA_CERTS` pointing to the certificate.
+- **`compose.yaml`** for a local run: secrets from `local/secrets/` (git-ignored), the example `dod/` mounted read-only, a named volume for `/data`, port `8443` on 127.0.0.1 only, `read_only`, `cap_drop: [ALL]`, `no-new-privileges`.
+- **`scripts/dev-cert.sh`** creates a self-signed certificate for `localhost` and a random token in `local/secrets/` with `openssl`, and prints where they are, not the token. Claude Code then connects with `claude mcp add --transport http dod https://localhost:8443/mcp --header "Authorization: Bearer …"`, started with `NODE_EXTRA_CA_CERTS` pointing to the certificate.
 - **One team per container** (answer 3, section 18): one DoD folder, one database, one set of tokens. Several teams run several containers.
 
 ### 11.3 Configuration (environment only)
@@ -642,6 +642,7 @@ dod-mcp/
 - **Organisation DoD as a minimum** (sketch, question 1): another layer above `base.yaml` with the same add-only rule; several teams per server.
 - **OAuth 2.1** with the company identity provider; scopes per team.
 - **Rate limit** per token, or at a reverse proxy.
+- **`expect` extensions** found with real data (a draft extracted from a real repository, kept outside this repository): comparing two fields with each other (deployed version = commit), and deadlines relative to another timestamp ("within 72 hours of detection").
 - **Second store backend** (for example PostgreSQL) for several replicas.
 
 ## 17. Questions for approval
