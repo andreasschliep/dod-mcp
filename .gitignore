@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+
+# Secrets: this server needs none; keep the rule anyway
+.env
+.env.*
+
+# Real DoD files and evidence stay outside the repository
+local/
+*.local.yaml
+*.local.json
+
+# Logs and OS files
+*.log
+.DS_Store
