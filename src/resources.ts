@@ -20,7 +20,8 @@ import type { ServerDeps } from './deps.ts';
 import { DodUnavailableError } from './dod/load.ts';
 import { effectiveDod } from './dod/merge.ts';
 import type { DodSet } from './dod/model.ts';
-import { rubricUri, templateUri, typeUri, typesOverview, typeView } from './dod/view.ts';
+import { loadEdition } from './dod/history.ts';
+import { dodView, rubricUri, templateUri, typeUri, typesOverview, typeView } from './dod/view.ts';
 import { logError } from './logger.ts';
 import { renderInvalid, renderRubric, renderTemplate } from './render.ts';
 
@@ -95,7 +96,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
     (uri) => {
       let body: Record<string, unknown>;
       try {
-        body = typesOverview(deps.loadSet());
+        body = typesOverview(deps.loadSet(), deps.store);
       } catch (error) {
         if (!(error instanceof DodUnavailableError)) throw error;
         body = { error: 'dod_unavailable', message: error.message };
@@ -125,8 +126,42 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
     (uri, variables) => {
       const type = typeVariable(variables);
       const set = tryLoad(deps);
-      const view = set ? typeView(set, type) : undefined;
+      const view = set ? typeView(set, type, deps.store) : undefined;
       if (!view) throw new ResourceNotFoundError(uri.href);
+      return {
+        contents: [
+          { uri: uri.href, mimeType: 'application/json', text: JSON.stringify(view, null, 2) },
+        ],
+      };
+    },
+  );
+
+  // Not listed: it would grow with every version. dod://type/{type} links its versions.
+  server.registerResource(
+    'dod-type-version',
+    new ResourceTemplate('dod://type/{type}/version/{n}', { list: undefined }),
+    {
+      title: 'Earlier version of a task type',
+      description:
+        'The DoD of a task type as it was at version n of its file, merged with the base in force ' +
+        'when the server first saw that version (design 6.3). Same shape as dod://type/{type}.',
+      mimeType: 'application/json',
+    },
+    (uri, variables) => {
+      const type = typeVariable(variables);
+      const n = Number(Array.isArray(variables.n) ? variables.n[0] : variables.n);
+      const set = tryLoad(deps);
+      if (!set || !deps.store || !set.history?.available || !Number.isInteger(n) || n < 1) {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      const edition = loadEdition(deps.store, type, n);
+      if (!edition) throw new ResourceNotFoundError(uri.href);
+      const current = effectiveDod(set, type);
+      const view = {
+        ...dodView(set, edition.dod),
+        first_seen_at: edition.first_seen_at,
+        current: current.ok && current.dod.dod_version === edition.dod.dod_version,
+      };
       return {
         contents: [
           { uri: uri.href, mimeType: 'application/json', text: JSON.stringify(view, null, 2) },

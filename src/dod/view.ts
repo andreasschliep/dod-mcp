@@ -4,6 +4,8 @@
  */
 import type { DodSet, ValidationError } from './model.ts';
 import { effectiveDod, type MergedCriterion, type MergedDod, type MergedRule } from './merge.ts';
+import type { DodStore } from '../store/store.ts';
+import { typeHistory, type VersionEntry } from './history.ts';
 import { invalidDod } from './resolve.ts';
 
 export function typeUri(type: string): string {
@@ -83,11 +85,32 @@ export function invalidView(set: DodSet, type: string): Record<string, unknown> 
   };
 }
 
+/** Recorded versions of a type, if the history is available. */
+export function historyOf(
+  set: DodSet,
+  store: DodStore | undefined,
+  type: string,
+): VersionEntry[] | undefined {
+  if (!store || !set.history?.available) return undefined;
+  try {
+    return typeHistory(store, type);
+  } catch {
+    return undefined;
+  }
+}
+
 /** The view of one type file, valid or not; undefined if there is no such file. */
-export function typeView(set: DodSet, type: string): Record<string, unknown> | undefined {
+export function typeView(
+  set: DodSet,
+  type: string,
+  store?: DodStore,
+): Record<string, unknown> | undefined {
   if (!set.types.has(type)) return undefined;
   const result = effectiveDod(set, type);
-  return result.ok ? dodView(set, result.dod) : invalidView(set, type);
+  const view = result.ok ? dodView(set, result.dod) : invalidView(set, type);
+  const history = historyOf(set, store, type);
+  if (history) view.history = history;
+  return view;
 }
 
 /** The merged DoD for a tool, or the domain error invalid_dod with file and line. */
@@ -97,9 +120,10 @@ export function requireDod(set: DodSet, type: string): MergedDod {
   return result.dod;
 }
 
-export function typesOverview(set: DodSet): Record<string, unknown> {
+export function typesOverview(set: DodSet, store?: DodStore): Record<string, unknown> {
   const base = set.base.parsed;
   return {
+    history: set.history ?? { available: false, backend: 'none' },
     base: {
       file: set.base.file,
       valid: base !== null,
@@ -128,6 +152,7 @@ export function typesOverview(set: DodSet): Record<string, unknown> {
             }
           : null,
         ...mapping,
+        versions: historyOf(set, store, type)?.map((v) => v.version) ?? [],
       };
     }),
     errors: [

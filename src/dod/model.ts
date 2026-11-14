@@ -150,4 +150,13 @@ export interface DodSet {
   mapping: FileState<MappingFile>;
   /** Every type file in the folder, valid or not, by type name, sorted. */
   types: Map<string, FileState<DodFile>>;
+  /** Set by the sync with the store (design 6.2); absent when no store is configured. */
+  history?: HistoryState;
+}
+
+export interface HistoryState {
+  available: boolean;
+  /** e.g. "sqlite:dod.sqlite"; never a full path. */
+  backend: string;
+  error?: string;
 }

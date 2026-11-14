@@ -20,7 +20,11 @@ async function main(): Promise<void> {
   await createServer(deps).connect(new StdioServerTransport());
   try {
     const set = deps.loadSet();
-    logInfo(`v${VERSION} ready on stdio; ${set.types.size} type file(s) in the DoD folder`);
+    logInfo(
+      `v${VERSION} ready on stdio; ${set.types.size} type file(s) in the DoD folder; history: ${
+        set.history?.available ? set.history.backend : 'unavailable'
+      }`,
+    );
   } catch (error) {
     if (!(error instanceof DodUnavailableError)) throw error;
     logInfo(`v${VERSION} ready on stdio; the DoD folder is not usable yet: ${error.message}`);

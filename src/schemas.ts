@@ -158,3 +158,47 @@ export const lintOutput = z.object({
   truncated: z.boolean(),
   limits: z.array(z.string()),
 });
+
+export const diffInput = z.object({
+  type: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .describe('A task type, or "base" to compare versions of the base'),
+  from: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Earlier version of the file; default: the version before `to`'),
+  to: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Later version of the file; default: the DoD in force now'),
+});
+
+const ListDiff = z.object({
+  added: z.array(z.looseObject({ id: z.string() })),
+  removed: z.array(z.looseObject({ id: z.string() })),
+  changed: z.array(
+    z.object({
+      id: z.string(),
+      origin: z.string(),
+      fields: z.array(z.object({ key: z.string(), from: z.unknown(), to: z.unknown() })),
+    }),
+  ),
+});
+
+export const diffOutput = z.object({
+  type: z.string(),
+  from: z.string(),
+  to: z.string(),
+  criteria: ListDiff,
+  rules: ListDiff,
+  template_changed: z.boolean(),
+  first_seen: z.object({ from: z.string().nullable(), to: z.string().nullable() }),
+  summary: z.object({ added: z.number(), removed: z.number(), changed: z.number() }),
+});

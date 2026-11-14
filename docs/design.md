@@ -273,7 +273,7 @@ DOD_DATABASE=sqlite:local/dod.sqlite     # stdio default (local/ is git-ignored)
 DOD_DATABASE=sqlite::memory:             # tests
 ```
 
-The server uses the store only through a narrow interface (`DodStore`: `recordFileVersion`, `recordEdition`, `latestVersion`, `listVersions`, `getFileVersion`, `getEdition`). Version 1 implements `sqlite:` with `node:sqlite` (no native addon, no extra dependency). Another backend, for example `postgres:`, is a new implementation of the same interface; any other scheme stops the server at start with a clear message. SQLite in WAL mode serves one container; several replicas on one database would need such a server-based backend.
+The server uses the store only through a narrow interface (`DodStore`: `recordFileVersion`, `recordEdition`, `latestVersion`, `listVersions`, `getFileVersion`, `firstEdition`, plus `transaction` and `close`). Version 1 implements `sqlite:` with `node:sqlite` (no native addon, no extra dependency). Another backend, for example `postgres:`, is a new implementation of the same interface; any other scheme stops the server at start with a clear message. SQLite in WAL mode serves one container; several replicas on one database would need such a server-based backend.
 
 ## 7. Type resolution
 
@@ -432,7 +432,7 @@ input = z.object({
 });
 ```
 
-- For a type, it compares two versions as described in 6.3, each merged with its base. For `base`, it compares two base versions.
+- For a type, it compares two versions as described in 6.3, each merged with its base. Without `to`, the later side is the DoD in force now, with the current base, so base changes since `from` show up too. For `base`, it compares two base versions.
 - Output: `{ type, from: "software-dev@3+base@1", to: "software-dev@4+base@3", criteria: { added, removed, changed: [{ id, origin, fields: [{ key, from, to }] }] }, rules: { added, removed, changed }, template_changed, first_seen: { from, to } }`. Every entry names its `origin`, so a review sees whether a change came from the base or the type.
 - Removing a type's own criterion between two versions is allowed (the team decided it by pull request); the diff shows it. Only removing a base criterion inside a type file is an error (5.6).
 - Domain errors: `unknown_type`, `unknown_version` (the hint lists the recorded versions), `no_history` (only one version recorded), `history_unavailable`.
@@ -569,7 +569,7 @@ Plus `examples/` with fictional evidence (JSON) per type, once with gaps and onc
 
 **D11 HTTPS only, with a bearer token.** Decision: TLS in the container, static tokens from a mounted file, no plain-HTTP mode. Alternative: OAuth 2.1 now, or no authentication. Reason: enough for one team per container and simple to explain and test; OAuth 2.1 needs an identity provider and follows when a DoD is shared across teams (answer 2).
 
-**D12 Configurable store behind a narrow interface.** Decision: `DodStore` with six methods, `sqlite:` via `node:sqlite` first. Alternative: an ORM or a query builder for several databases at once. Reason: the store holds two tables; an ORM would be more code than the store. `node:sqlite` needs no native build in the image. A server-based backend is a second implementation of the same interface.
+**D12 Configurable store behind a narrow interface.** Decision: `DodStore` with a handful of methods, `sqlite:` via `node:sqlite` first. Alternative: an ORM or a query builder for several databases at once. Reason: the store holds two tables; an ORM would be more code than the store. `node:sqlite` needs no native build in the image. A server-based backend is a second implementation of the same interface.
 
 **D13 stdio stays.** Decision: the same server runs over stdio or HTTPS, chosen by `DOD_TRANSPORT`. Alternative: HTTPS only. Reason: local work in Claude Code needs no certificate, and the fast tests run without Docker.
 

@@ -25,7 +25,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: [MAIN],
-      env: { PATH: process.env.PATH ?? '', DOD_DIR: dir },
+      env: { PATH: process.env.PATH ?? '', DOD_DIR: dir, DOD_DATABASE: 'sqlite::memory:' },
       stderr: 'ignore',
     }),
   );
@@ -46,10 +46,11 @@ async function resourceText(uri: string): Promise<string> {
   return first?.text ?? '';
 }
 
-test('three read-only tools with output schemas', async () => {
+test('four read-only tools with output schemas', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((t) => t.name).sort(), [
     'check_dod',
+    'diff_dod',
     'get_dod',
     'lint_acceptance_criteria',
   ]);
@@ -259,4 +260,39 @@ test('the prompt done_check walks through the check and writes nothing', async (
 
 test('an unknown tool is a protocol error', async () => {
   await assert.rejects(client.callTool({ name: 'mark_done', arguments: {} }));
+});
+
+test('history over the protocol: a new version, its predecessor as a resource, and diff_dod', async () => {
+  const file = join(dir, 'kundenanfrage.yaml');
+  writeFileSync(
+    file,
+    readFileSync(file, 'utf8')
+      .replace('version: 3', 'version: 4')
+      .replace('role: Vertrieb', 'role: Vertriebsleitung'),
+  );
+  const current = JSON.parse(await resourceText('dod://type/kundenanfrage')) as {
+    dod_version: string;
+    history: { version: number; uri: string }[];
+  };
+  assert.equal(current.dod_version, 'kundenanfrage@4+base@3');
+  assert.deepEqual(
+    current.history.map((h) => h.uri),
+    ['dod://type/kundenanfrage/version/3', 'dod://type/kundenanfrage/version/4'],
+  );
+  const v3 = JSON.parse(await resourceText('dod://type/kundenanfrage/version/3')) as {
+    dod_version: string;
+    current: boolean;
+  };
+  assert.deepEqual([v3.dod_version, v3.current], ['kundenanfrage@3+base@3', false]);
+  await assert.rejects(client.readResource({ uri: 'dod://type/kundenanfrage/version/9' }));
+
+  const diff = await client.callTool({ name: 'diff_dod', arguments: { type: 'kundenanfrage' } });
+  assert.equal(diff.isError, undefined, text(diff));
+  assert.match(
+    text(diff),
+    /kundenanfrage@3\+base@3 → kundenanfrage@4\+base@3: 0 added, 0 removed, 1 changed[\s\S]*~ criterion ZUSAGE \(kundenanfrage\): role "Vertrieb" → "Vertriebsleitung"/,
+  );
+  const none = await client.callTool({ name: 'diff_dod', arguments: { type: 'dokument' } });
+  assert.equal(none.isError, true);
+  assert.match(text(none), /^no_history:/);
 });

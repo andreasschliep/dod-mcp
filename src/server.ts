@@ -19,7 +19,8 @@ const INSTRUCTIONS =
   'material. The server reports met / not_met / needs_judgment per criterion; your assessment is ' +
   "plausible / doubtful; whether an item is done is the team's decision, never yours. Never invent " +
   'evidence and never confirm an attestation yourself. lint_acceptance_criteria checks acceptance ' +
-  'criteria against template://{type}. The prompt done_check runs the whole check. All tools are read-only.';
+  'criteria against template://{type}. diff_dod compares versions of a type or the base for DoD ' +
+  'reviews. The prompt done_check runs the whole check. All tools are read-only.';
 
 export function createServer(deps: ServerDeps = defaultDeps()): McpServer {
   const server = new McpServer(
