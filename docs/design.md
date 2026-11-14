@@ -1,6 +1,6 @@
 # dod-mcp: design
 
-Status: draft for review, second version, 14 November 2026. Basis: the concept sketch "Team-MCP-Server Definition of Done" of 14 November 2026, sections 3 and 4. Design and decisions: Andreas Schliep. Drafted with Claude Code. **All data in this repository is fictional.**
+Status: approved 14 November 2026 (answers in section 18), second version. Basis: the concept sketch "Team-MCP-Server Definition of Done" of 14 November 2026, sections 3 and 4. Design and decisions: Andreas Schliep. Drafted with Claude Code. **All data in this repository is fictional.**
 
 Changes from the first draft (answers in section 18): the specification is in English, and so are status and finding codes; a configurable database (SQLite first) keeps every version of the DoD files; the server runs in a Docker container and is reached over HTTPS with a bearer token; the container is defined and tested in this repository. With the version history in place, `diff_dod` and `dod://type/{type}/version/{n}` move from open points into scope.
 
@@ -539,7 +539,7 @@ One invented team with three task types, following the table in the sketch (3.1)
 | File                 | Version | Evidence (`evidence`)                                                    | Judgment (`judgment`)              | Attestation                        | Acceptance rules                               |
 | -------------------- | ------- | ------------------------------------------------------------------------ | ---------------------------------- | ---------------------------------- | ---------------------------------------------- |
 | `base.yaml`          | 2       | `ERGEBNIS-VERLINKT`                                                      | `FOLGEARBEIT`                      | `ZWEITE-PERSON` (Teammitglied)     | `AK-VAGE`                                      |
-| `software-dev.yaml`  | 4       | `QUALITY-GATE`, `BUILD`, `TESTS` (all `same_ref`, 24 h), `TESTAENDERUNG-AUSGEWIESEN` | `AK-GETESTET`          | `RUNBOOK` (Betrieb)                | `AK-GWT`, `AK-DANN`, `AK-EINHEIT`, `AK-VAGE-SW` |
+| `software-dev.yaml`  | 4       | `QUALITY-GATE`, `BUILD`, `TESTS` (all `same_ref`, 24 h), `TESTAENDERUNG-AUSGEWIESEN` | `KRITERIEN-GETESTET`   | `RUNBOOK` (Betrieb)                | `AK-GWT`, `AK-DANN`, `AK-EINHEIT`, `AK-VAGE-SW` |
 | `dokument.yaml`      | 2       | `PFLICHTABSCHNITTE`, `LINKS` (72 h), `BEGRIFFE`                          | `ZWECK-ZIELGRUPPE`, `SYSTEMSTAND`  | `FACHFREIGABE` (Fachverantwortung) | `AK-FELDER` (Zweck, Zielgruppe, Umfang), `AK-VAGE-DOK` |
 | `kundenanfrage.yaml` | 3       | `FRIST`                                                                  | `VOLLSTAENDIG`, `WISSENSBASIS`     | `ZUSAGE` (Vertrieb)                | `AK-FELDER` (Fragen as a list, Frist), `AK-VAGE-KA` |
 
@@ -660,3 +660,4 @@ dod-mcp/
 3. **Tenancy:** one team per container.
 4. **Language:** the specification and all status, finding and error codes are in English.
 5. **First draft, other changes requested:** the server runs in a Docker container, defined and tested in this repository.
+6. **F1 to F4 (section 17):** approved as proposed. Missing evidence is `not_met`; an explicit `type` may resolve an ambiguity; the CLI `dod-validate` and the prompt `done_check` are built now; a content change without a version bump makes the file invalid.
