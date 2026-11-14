@@ -1,0 +1,45 @@
+{
+  "_comment": "FICTIONAL EXAMPLE: check_dod input for an invented customer request: answer too late, price promise confirmed by the wrong role, one piece of evidence for a criterion this type does not have.",
+  "item": { "id": "ANF-7", "ticket_type": "Anfrage" },
+  "as_of": "2026-11-14T10:00:00Z",
+  "evidence": [
+    {
+      "criterion": "ERGEBNIS-VERLINKT",
+      "source": "helpdesk",
+      "tool": "helpdesk:get_ticket",
+      "retrieved_at": "2026-11-14T09:50:00Z",
+      "raw": { "result_links": ["https://helpdesk.example.org/anfragen/7#antwort-1"] }
+    },
+    {
+      "criterion": "FRIST",
+      "source": "helpdesk",
+      "tool": "helpdesk:get_ticket",
+      "retrieved_at": "2026-11-14T09:50:00Z",
+      "raw": {
+        "first_response_at": "2026-11-12T16:30:00+01:00",
+        "due_at": "2026-11-12T12:00:00+01:00"
+      }
+    },
+    {
+      "criterion": "ZWEITE-PERSON",
+      "source": "helpdesk",
+      "tool": "helpdesk:get_ticket",
+      "retrieved_at": "2026-11-14T09:50:00Z",
+      "raw": { "role": "Teammitglied", "by": "Person D" }
+    },
+    {
+      "criterion": "ZUSAGE",
+      "source": "helpdesk",
+      "tool": "helpdesk:get_ticket",
+      "retrieved_at": "2026-11-14T09:50:00Z",
+      "raw": { "role": "Teammitglied", "by": "Person D" }
+    },
+    {
+      "criterion": "QUALITY-GATE",
+      "source": "sonarqube",
+      "tool": "sonarqube:get_project_quality_gate_status",
+      "retrieved_at": "2026-11-14T09:40:00Z",
+      "raw": { "status": "OK" }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "_comment": "FICTIONAL EXAMPLE: check_dod input for an invented story, with three gaps (gate for another commit, stale tests, no second person).",
+  "item": { "id": "DEMO-42", "ticket_type": "Story", "labels": ["frontend"], "ref": "9f2c1ab" },
+  "as_of": "2026-11-14T10:00:00Z",
+  "evidence": [
+    {
+      "criterion": "ERGEBNIS-VERLINKT",
+      "source": "tickets",
+      "tool": "tickets:get_item",
+      "arguments": { "id": "DEMO-42" },
+      "retrieved_at": "2026-11-14T09:35:00Z",
+      "raw": { "result_links": ["https://git.example.org/demo/shop/pull/17"] }
+    },
+    {
+      "criterion": "QUALITY-GATE",
+      "source": "sonarqube",
+      "tool": "mcp__sonarqube__get_project_quality_gate_status",
+      "arguments": { "projectKey": "demo-shop", "pullRequest": "17" },
+      "retrieved_at": "2026-11-14T09:40:00Z",
+      "raw": { "status": "OK" },
+      "ref": "71be0d4"
+    },
+    {
+      "criterion": "BUILD",
+      "source": "ci",
+      "tool": "ci:get_build",
+      "arguments": { "pipeline": "shop", "commit": "9f2c1ab" },
+      "retrieved_at": "2026-11-14T09:41:00Z",
+      "raw": { "id": 4711, "result": "succeeded" },
+      "ref": "9f2c1ab"
+    },
+    {
+      "criterion": "TESTS",
+      "source": "ci",
+      "tool": "ci:get_test_results",
+      "arguments": { "build": 4688 },
+      "retrieved_at": "2026-11-13T04:00:00Z",
+      "raw": { "passed": 412, "failed": 0 },
+      "ref": "9f2c1ab"
+    },
+    {
+      "criterion": "TESTAENDERUNG-AUSGEWIESEN",
+      "source": "scm",
+      "tool": "scm:get_pull_request",
+      "arguments": { "number": 17 },
+      "retrieved_at": "2026-11-14T09:42:00Z",
+      "raw": { "changed_tests": ["test/cart.test.ts"], "unlisted_test_changes": 0 },
+      "ref": "9f2c1ab"
+    },
+    {
+      "criterion": "RUNBOOK",
+      "source": "tickets",
+      "tool": "tickets:get_item",
+      "arguments": { "id": "DEMO-42" },
+      "retrieved_at": "2026-11-14T09:35:00Z",
+      "raw": {
+        "role": "Betrieb",
+        "by": "Person B",
+        "comment": "Runbook Abschnitt Warenkorb ergänzt."
+      }
+    }
+  ]
+}
