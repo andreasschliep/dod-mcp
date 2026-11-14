@@ -16,6 +16,16 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** A Markdown heading "## Name" (optionally bold, optionally with a colon) starts a field too. */
+const ANY_HEADING = /^\s{0,3}#{1,6}\s/;
+
+function headingLine(name: string): RegExp {
+  return new RegExp(
+    `^\\s{0,3}#{1,6}\\s+(?:\\*\\*)?${escapeRegExp(name)}(?:\\*\\*)?\\s*:?\\s*$`,
+    'iu',
+  );
+}
+
 function fieldLine(name: string): RegExp {
   return new RegExp(
     `^\\s*(?:[-*+]\\s+)?(?:\\*\\*)?${escapeRegExp(name)}(?:\\*\\*)?\\s*:(?:\\*\\*)?\\s*(.*)$`,
@@ -58,7 +68,8 @@ export function checkFields(lines: string[], fields: readonly FieldSpec[]): Fiel
   const problems: FieldProblem[] = [];
   for (const spec of fields) {
     const pattern = fieldLine(spec.name);
-    const index = lines.findIndex((l) => pattern.test(l));
+    const heading = headingLine(spec.name);
+    const index = lines.findIndex((l) => pattern.test(l) || heading.test(l));
     if (index < 0) {
       problems.push({
         code: 'field_missing',
@@ -68,12 +79,21 @@ export function checkFields(lines: string[], fields: readonly FieldSpec[]): Fiel
       continue;
     }
     const lineNo = index + 1;
-    const inline = (pattern.exec(lines[index]!)?.[1] ?? '').replace(/\*\*$/, '').trim();
+    const isHeading = heading.test(lines[index]!);
+    const inline = isHeading
+      ? ''
+      : (pattern.exec(lines[index]!)?.[1] ?? '').replace(/\*\*$/, '').trim();
 
-    // Following lines up to a blank line or the next field.
+    // A "Name:" field runs to the next blank line or field; a "## Name" section runs to
+    // the next heading, blank lines included.
     const following: string[] = [];
     for (let i = index + 1; i < lines.length; i++) {
       const l = lines[i]!;
+      if (isHeading) {
+        if (ANY_HEADING.test(l)) break;
+        if (l.trim() !== '') following.push(l);
+        continue;
+      }
       if (l.trim() === '') break;
       if (!LIST_ITEM.test(l) && ANY_FIELD.test(l)) break;
       following.push(l);

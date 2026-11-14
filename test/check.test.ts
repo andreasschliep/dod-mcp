@@ -235,3 +235,29 @@ test('output budget: check_dod on software-dev stays under 8,000 tokens', () => 
   const json = JSON.stringify(run(example('software-dev-gaps')));
   assert.ok(json.length / 4 < 8000, `${json.length / 4} tokens`);
 });
+
+test('expect fields: an exact key first, else a dotted path into nested objects', () => {
+  const health = { status: 'degraded', dependencies: { database: { status: 'up' } } };
+  assert.deepEqual(
+    evaluateExpect({ field: 'dependencies.database.status', equals: 'up' }, health),
+    {
+      ok: true,
+    },
+  );
+  assert.deepEqual(evaluateExpect({ field: 'a.b', equals: 1 }, { 'a.b': 1, a: { b: 2 } }), {
+    ok: true,
+  });
+  const missing = evaluateExpect({ field: 'dependencies.cache.status', equals: 'up' }, health);
+  assert.ok(
+    !missing.ok &&
+      missing.kind === 'invalid' &&
+      /no field "dependencies\.cache\.status"/.test(missing.message),
+  );
+  assert.deepEqual(
+    evaluateExpect(
+      { field: 'detected.at', not_after: 'detected.deadline' },
+      { detected: { at: '2026-11-10T08:00:00Z', deadline: '2026-11-13T08:00:00Z' } },
+    ),
+    { ok: true },
+  );
+});

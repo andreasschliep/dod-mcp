@@ -41,17 +41,34 @@ function show(value: unknown): string {
   return text.length > 60 ? `${text.slice(0, 59)}…` : text;
 }
 
+const MISSING = Symbol('missing');
+
+/**
+ * A field of the raw value: the exact key first, else a dotted path into nested
+ * objects ("database.status"). Deterministic; no other path syntax.
+ */
+export function getField(raw: unknown, field: string): unknown {
+  if (!isObject(raw)) return MISSING;
+  if (Object.hasOwn(raw, field)) return raw[field];
+  let current: unknown = raw;
+  for (const part of field.split('.')) {
+    if (!isObject(current) || !Object.hasOwn(current, part)) return MISSING;
+    current = current[part];
+  }
+  return current;
+}
+
 export function evaluateExpect(expect: Expect, raw: unknown): ExpectOutcome {
   let value: unknown = raw;
   if (expect.field !== undefined) {
-    if (!isObject(raw) || !Object.hasOwn(raw, expect.field)) {
+    value = getField(raw, expect.field);
+    if (value === MISSING) {
       return {
         ok: false,
         kind: 'invalid',
         message: `The raw value has no field "${expect.field}".`,
       };
     }
-    value = raw[expect.field];
   }
   const label = expect.field ?? 'value';
 
@@ -120,7 +137,7 @@ export function evaluateExpect(expect: Expect, raw: unknown): ExpectOutcome {
 
   // not_after: both fields are timestamps with time zone.
   const other = expect.not_after!;
-  const limitRaw = isObject(raw) ? raw[other] : undefined;
+  const limitRaw = getField(raw, other);
   const at = parseTimestamp(value);
   const limit = parseTimestamp(limitRaw);
   if (at === undefined || limit === undefined) {

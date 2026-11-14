@@ -134,3 +134,33 @@ test('lint ignores the content of inline code spans', () => {
   ].join('\n');
   assert.deepEqual(lintAcceptance(text, 'software-dev', rules).findings, []);
 });
+
+test('fields: a Markdown heading starts a field, its section runs to the next heading', () => {
+  const rules = requireDod(set, 'kundenanfrage').rules;
+  const text = [
+    '## Fragen',
+    '',
+    '- [ ] Gibt es eine Mengenrabattstaffel ab 50 Lizenzen?',
+    '- [ ] Lässt sich die Laufzeit auf 24 Monate verlängern?',
+    '',
+    '### Frist:',
+    '',
+    '2 Arbeitstage',
+    '',
+    '## Notizen',
+    'Kunde fragt zum zweiten Mal.',
+  ].join('\n');
+  assert.deepEqual(lintAcceptance(text, 'kundenanfrage', rules).findings, []);
+
+  const empty = ['## Fragen', '', '## Frist', 'demnächst'].join('\n');
+  assert.deepEqual(
+    lintAcceptance(empty, 'kundenanfrage', rules).findings.map((f) => `${f.line} ${f.code}`),
+    ['1 list_too_short', '3 field_format'],
+  );
+  // A heading that only contains the name in a longer title is not the field.
+  const other = ['## Fragen zur Lizenz', '- Preis?', 'Frist: 2 Arbeitstage'].join('\n');
+  assert.deepEqual(
+    lintAcceptance(other, 'kundenanfrage', rules).findings.map((f) => f.code),
+    ['field_missing'],
+  );
+});
