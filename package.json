@@ -1,0 +1,45 @@
+{
+  "name": "dod-mcp",
+  "version": "0.1.0",
+  "description": "Team MCP server for a versioned Definition of Done: one resource per task type, deterministic checks of evidence and acceptance criteria.",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Andreas Schliep",
+  "bin": {
+    "dod-mcp": "dist/main.js",
+    "dod-validate": "dist/cli/validate.js"
+  },
+  "main": "dist/main.js",
+  "files": [
+    "dist",
+    "dod"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "validate-dod": "node src/cli/validate.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.72.2"
+  }
+}
