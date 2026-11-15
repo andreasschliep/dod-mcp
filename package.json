@@ -4,7 +4,7 @@
   "description": "Team MCP server for a versioned Definition of Done: one resource per task type, deterministic checks of evidence and acceptance criteria.",
   "type": "module",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Andreas Schliep",
   "bin": {
     "dod-mcp": "dist/main.js",

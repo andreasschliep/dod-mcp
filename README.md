@@ -168,4 +168,4 @@ To test the format against reality, a draft DoD was extracted read-only from one
 
 ## Licence
 
-None yet: a private prototype.
+MIT, see [LICENSE](LICENSE).
